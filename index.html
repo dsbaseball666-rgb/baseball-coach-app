@@ -706,6 +706,24 @@
         <div style="margin-top:14px;"><button class="btn btn-primary" onclick="addLeaveRequest()">＋ 新增請假單</button></div>
       </div>
 
+      <div class="card">
+        <h2>固定補習時段（每週或每月固定，不用每次手動請假）</h2>
+        <p class="page-desc" style="padding-left:0;margin-bottom:10px;">設定後，符合的日期在「點名」會自動預設為補習狀態</p>
+        <div class="grid grid-3">
+          <div><label>球員姓名</label><select id="tutor-name"></select></div>
+          <div><label>週期</label><select id="tutor-frequency" onchange="updateTutoringFrequencyFields()"><option value="weekly">每週固定</option><option value="monthly">每月固定</option></select></div>
+          <div id="tutor-monthday-field" style="display:none;"><label>每月固定日期</label><input type="number" id="tutor-monthday" min="1" max="31" placeholder="例如：15"></div>
+        </div>
+        <div id="tutor-weekday-field" style="margin-top:14px;">
+          <label>星期（可複選）</label>
+          <div id="tutor-weekday-chips" style="display:flex;gap:8px;flex-wrap:wrap;"></div>
+        </div>
+        <div style="margin-top:14px;"><label>備註</label><input type="text" id="tutor-note" placeholder="選填，例如補習班名稱"></div>
+        <div style="margin-top:14px;"><button class="btn btn-primary" onclick="addRecurringTutoring()">＋ 新增固定補習時段</button></div>
+
+        <div id="tutoring-list" style="margin-top:16px;"></div>
+      </div>
+
       <div id="leave-list" class="card-grid"></div>
     </div>
 
@@ -1286,6 +1304,7 @@ let state = {
   leaveRequests: [], // {id,name,start,end,reason,makeup,returnDate,note,status}
   practiceNotices: [], // {id,date,time,location,dress,note}
   fieldingPositions: { '投手':[], '捕手':[], '一壘手':[], '二壘手':[], '三壘手':[], '游擊手':[], '左外野手':[], '中外野手':[], '右外野手':[] }, // { 守備位置: [球員姓名,...] }
+  recurringTutoring: [], // {id,name,frequency:'weekly'|'monthly',weekdays:[0-6],monthDay:1-31,note}
 };
 
 // 目前在隊球員姓名清單（供各分頁下拉選單使用）
@@ -1456,7 +1475,7 @@ function ensureDefaultPlayers(){
 
 function fillNameSelects(){
   const names = activePlayerNames();
-  const selects = ['injury-name','growth-name','leave-name'];
+  const selects = ['injury-name','growth-name','leave-name','tutor-name'];
   selects.forEach(id=>{
     const el = document.getElementById(id);
     const prev = el.value;
@@ -2429,6 +2448,12 @@ function exportToExcel(){
   }));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(leaveRows.length?leaveRows:[{提示:'尚無資料'}]), '請假單');
 
+  // 固定補習時段
+  const tutorRows = state.recurringTutoring.map(t=>({
+    姓名:t.name, 週期:tutoringRuleText(t), 備註:t.note||''
+  }));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(tutorRows.length?tutorRows:[{提示:'尚無資料'}]), '固定補習時段');
+
   // 練球通知
   const practiceRows = sortedPracticeNotices().map(p=>({
     日期:p.date, 開始時間:p.time||'', 預計結束時間:p.endTime||'', 地點:p.location||'', 穿著服裝:p.dress||'', 注意事項:p.note||''
@@ -3205,6 +3230,104 @@ function shareCleaningGroup(groupName){
   shareContent('球場打掃分組', text, canvas, `打掃分組_${group.name}`);
 }
 
+/* ---------- 固定補習時段 ---------- */
+const WEEKDAY_LABELS = ['日','一','二','三','四','五','六']; // 對應 JS Date.getDay() 0-6
+let tutorWeekdaysSelected = [];
+
+function renderTutorWeekdayChips(){
+  const box = document.getElementById('tutor-weekday-chips');
+  if(!box) return;
+  box.innerHTML = [1,2,3,4,5,6,0].map(dayNum=>{ // 顯示順序：一二三四五六日
+    const active = tutorWeekdaysSelected.includes(dayNum);
+    return `<span onclick="toggleTutorWeekday(${dayNum})" style="cursor:pointer;user-select:none;padding:6px 12px;border-radius:100px;font-size:13px;font-weight:600;
+      border:1px solid ${active ? 'var(--field)' : 'var(--line)'};
+      background:${active ? 'var(--field)' : '#15152F'};
+      color:${active ? '#fff' : 'var(--grey)'};">星期${WEEKDAY_LABELS[dayNum]}</span>`;
+  }).join('');
+}
+
+function toggleTutorWeekday(dayNum){
+  if(tutorWeekdaysSelected.includes(dayNum)){
+    tutorWeekdaysSelected = tutorWeekdaysSelected.filter(d=>d!==dayNum);
+  } else {
+    tutorWeekdaysSelected.push(dayNum);
+  }
+  renderTutorWeekdayChips();
+}
+
+function updateTutoringFrequencyFields(){
+  const freq = document.getElementById('tutor-frequency').value;
+  document.getElementById('tutor-weekday-field').style.display = freq==='weekly' ? 'block' : 'none';
+  document.getElementById('tutor-monthday-field').style.display = freq==='monthly' ? 'block' : 'none';
+}
+
+function addRecurringTutoring(){
+  const name = document.getElementById('tutor-name').value;
+  const frequency = document.getElementById('tutor-frequency').value;
+  const monthDay = Number(document.getElementById('tutor-monthday').value || 0);
+  const note = document.getElementById('tutor-note').value.trim();
+  if(!name){ toast('請選擇球員'); return; }
+  if(frequency === 'weekly' && tutorWeekdaysSelected.length===0){ toast('請至少選擇一個星期'); return; }
+  if(frequency === 'monthly' && (!monthDay || monthDay < 1 || monthDay > 31)){ toast('請輸入有效的每月日期（1-31）'); return; }
+
+  state.recurringTutoring.push({
+    id: uid(), name, frequency,
+    weekdays: frequency==='weekly' ? [...tutorWeekdaysSelected] : [],
+    monthDay: frequency==='monthly' ? monthDay : null,
+    note
+  });
+  tutorWeekdaysSelected = [];
+  renderTutorWeekdayChips();
+  document.getElementById('tutor-monthday').value = '';
+  document.getElementById('tutor-note').value = '';
+  saveState();
+  renderTutoringList();
+  toast(`已設定 ${name} 的固定補習時段`);
+}
+
+function deleteRecurringTutoring(id){
+  state.recurringTutoring = state.recurringTutoring.filter(t=>t.id!==id);
+  saveState();
+  renderTutoringList();
+}
+
+function tutoringRuleText(t){
+  if(t.frequency === 'weekly'){
+    return '每週' + t.weekdays.slice().sort().map(d=>WEEKDAY_LABELS[d]).join('、');
+  }
+  return `每月 ${t.monthDay} 號`;
+}
+
+function renderTutoringList(){
+  const box = document.getElementById('tutoring-list');
+  if(!box) return;
+  if(state.recurringTutoring.length===0){
+    box.innerHTML = `<div class="empty">尚無固定補習時段設定</div>`;
+    return;
+  }
+  box.innerHTML = state.recurringTutoring.map(t=>`
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);">
+      <div>
+        <span style="font-weight:700;">${t.name}</span>
+        <span style="font-size:12.5px;color:var(--grey);margin-left:8px;">${tutoringRuleText(t)}${t.note ? '・'+t.note : ''}</span>
+      </div>
+      <button class="icon-btn" onclick="deleteRecurringTutoring('${t.id}')">刪除</button>
+    </div>`).join('');
+}
+
+// 判斷某位球員在某天是否符合固定補習時段規則
+function isRecurringTutoringDay(name, dateStr){
+  const d = new Date(dateStr);
+  const weekday = d.getDay();
+  const dayOfMonth = d.getDate();
+  return state.recurringTutoring.some(t=>{
+    if(t.name !== name) return false;
+    if(t.frequency === 'weekly') return t.weekdays.includes(weekday);
+    if(t.frequency === 'monthly') return t.monthDay === dayOfMonth;
+    return false;
+  });
+}
+
 /* ---------- 請假單 ---------- */
 function datesInRange(start, end){
   const dates = [];
@@ -3289,46 +3412,81 @@ function toggleLeaveExpand(id){
   renderLeaveRequests();
 }
 
+let leaveDateExpanded = new Set();
+
+function toggleLeaveDateExpand(date){
+  if(leaveDateExpanded.has(date)) leaveDateExpanded.delete(date); else leaveDateExpanded.add(date);
+  renderLeaveRequests();
+}
+
+function renderLeaveItemCard(l){
+  const days = leaveDayCount(l.start, l.end);
+  const statusOpts = ['待確認','已確認'].map(s=>`<option value="${s}" ${s===l.status?'selected':''}>${s}</option>`).join('');
+  const pillClass = LEAVE_STATUS_PILL[l.status] || 'pill-grey';
+  const expanded = leaveExpanded.has(l.id);
+  const reasonPreview = (l.reason||'').length > 16 ? l.reason.slice(0,16)+'…' : (l.reason||'');
+
+  const detailHtml = expanded ? `
+    <div class="grid grid-3" style="margin-top:14px;">
+      <div><label>是否需補課/補練</label><select onchange="updateLeaveField('${l.id}','makeup',this.value)"><option ${l.makeup==='否'?'selected':''}>否</option><option ${l.makeup==='是'?'selected':''}>是</option></select></div>
+      <div><label>預計返隊日期</label><input type="date" value="${l.returnDate||''}" onchange="updateLeaveField('${l.id}','returnDate',this.value)"></div>
+      <div><label>請假結束日</label><input type="date" value="${l.end||l.start}" onchange="updateLeaveField('${l.id}','end',this.value)"></div>
+    </div>
+    <div style="margin-top:10px;"><label>請假原因</label><textarea style="min-height:38px;font-size:13px;" onchange="updateLeaveField('${l.id}','reason',this.value)">${l.reason||''}</textarea></div>
+    <div style="margin-top:10px;"><label>其他說明</label><textarea style="min-height:38px;font-size:13px;" onchange="updateLeaveField('${l.id}','note',this.value)">${l.note||''}</textarea></div>
+  ` : '';
+
+  return `<div style="padding:10px 0;border-bottom:1px solid var(--line);" onclick="event.stopPropagation();">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;min-width:0;">
+        <span style="font-weight:700;font-size:14.5px;">${l.name}</span>
+        <span class="pill ${pillClass}">${l.status}</span>
+        <span style="font-size:12px;color:var(--grey);white-space:nowrap;">${l.start}${l.end && l.end!==l.start ? ' ～ '+l.end : ''}（${days}天）</span>
+        ${!expanded && reasonPreview ? `<span style="font-size:12px;color:var(--grey);">・${reasonPreview}</span>` : ''}
+      </div>
+      <div style="display:flex;gap:6px;align-items:center;flex-shrink:0;">
+        <select style="font-size:12px;padding:5px 6px;" onchange="updateLeaveField('${l.id}','status',this.value); renderLeaveRequests();">${statusOpts}</select>
+        <button class="icon-btn" onclick="toggleLeaveExpand('${l.id}')">${expanded ? '收合' : '詳細'}</button>
+        <button class="icon-btn" onclick="shareLeaveRequest('${l.id}')">📤</button>
+        <button class="icon-btn" onclick="deleteLeaveRequest('${l.id}')">刪除</button>
+      </div>
+    </div>
+    ${detailHtml}
+  </div>`;
+}
+
 function renderLeaveRequests(){
   const box = document.getElementById('leave-list');
   if(state.leaveRequests.length === 0){
     box.innerHTML = `<div class="card"><div class="empty">尚無請假紀錄，請於上方新增</div></div>`;
     return;
   }
-  const sorted = [...state.leaveRequests].sort((a,b)=> b.start.localeCompare(a.start));
-  box.innerHTML = sorted.map(l=>{
-    const days = leaveDayCount(l.start, l.end);
-    const statusOpts = ['待確認','已確認'].map(s=>`<option value="${s}" ${s===l.status?'selected':''}>${s}</option>`).join('');
-    const pillClass = LEAVE_STATUS_PILL[l.status] || 'pill-grey';
-    const expanded = leaveExpanded.has(l.id);
-    const reasonPreview = (l.reason||'').length > 16 ? l.reason.slice(0,16)+'…' : (l.reason||'');
+  // 依日期分組：一筆請假若橫跨多天，會出現在它涵蓋的每一天底下
+  const byDate = {};
+  state.leaveRequests.forEach(l=>{
+    datesInRange(l.start, l.end||l.start).forEach(d=>{
+      if(!byDate[d]) byDate[d] = [];
+      byDate[d].push(l);
+    });
+  });
+  const dates = Object.keys(byDate).sort().reverse();
+  const today = todayStr();
 
-    const detailHtml = expanded ? `
-      <div class="grid grid-3" style="margin-top:14px;">
-        <div><label>是否需補課/補練</label><select onchange="updateLeaveField('${l.id}','makeup',this.value)"><option ${l.makeup==='否'?'selected':''}>否</option><option ${l.makeup==='是'?'selected':''}>是</option></select></div>
-        <div><label>預計返隊日期</label><input type="date" value="${l.returnDate||''}" onchange="updateLeaveField('${l.id}','returnDate',this.value)"></div>
-        <div><label>請假結束日</label><input type="date" value="${l.end||l.start}" onchange="updateLeaveField('${l.id}','end',this.value)"></div>
-      </div>
-      <div style="margin-top:10px;"><label>請假原因</label><textarea style="min-height:38px;font-size:13px;" onchange="updateLeaveField('${l.id}','reason',this.value)">${l.reason||''}</textarea></div>
-      <div style="margin-top:10px;"><label>其他說明</label><textarea style="min-height:38px;font-size:13px;" onchange="updateLeaveField('${l.id}','note',this.value)">${l.note||''}</textarea></div>
-    ` : '';
-
-    return `<div class="card" style="padding:14px 16px;">
+  box.innerHTML = dates.map(date=>{
+    const items = byDate[date];
+    const expanded = leaveDateExpanded.has(date);
+    const isToday = date === today;
+    const names = items.map(l=>l.name).join('、');
+    return `<div class="card" style="padding:14px 16px;cursor:pointer;" onclick="toggleLeaveDateExpand('${date}')">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;min-width:0;">
-          <span style="font-weight:700;font-size:14.5px;">${l.name}</span>
-          <span class="pill ${pillClass}">${l.status}</span>
-          <span style="font-size:12px;color:var(--grey);white-space:nowrap;">${l.start}${l.end && l.end!==l.start ? ' ～ '+l.end : ''}（${days}天）</span>
-          ${!expanded && reasonPreview ? `<span style="font-size:12px;color:var(--grey);">・${reasonPreview}</span>` : ''}
+          <span style="font-weight:700;font-size:14.5px;">${date}</span>
+          ${isToday ? `<span class="pill pill-warn">今天</span>` : ''}
+          <span style="font-size:12.5px;color:var(--grey);">${items.length} 人請假${!expanded ? '：'+names : ''}</span>
         </div>
-        <div style="display:flex;gap:6px;align-items:center;flex-shrink:0;">
-          <select style="font-size:12px;padding:5px 6px;" onchange="updateLeaveField('${l.id}','status',this.value); renderLeaveRequests();">${statusOpts}</select>
-          <button class="icon-btn" onclick="toggleLeaveExpand('${l.id}')">${expanded ? '收合' : '詳細'}</button>
-          <button class="icon-btn" onclick="shareLeaveRequest('${l.id}')">📤</button>
-          <button class="icon-btn" onclick="deleteLeaveRequest('${l.id}')">刪除</button>
-        </div>
+        <span style="color:var(--grey);font-size:12px;">${expanded ? '▲ 收合' : '▼ 查看名單'}</span>
       </div>
-      ${detailHtml}
+      ${expanded ? `<div style="margin-top:10px;">${items.map(l=>renderLeaveItemCard(l)).join('')}</div>` : ''}
     </div>`;
   }).join('');
 }
@@ -3971,7 +4129,10 @@ function renderAttendanceForm(){
     '補習': { bg:'#1E3350', text:'#8FC3FF', border:'#8FC3FF' },
   };
   box.innerHTML = activePlayerNames().map(name=>{
-    const current = existing[name] || '出席';
+    let current = existing[name];
+    if(!current){
+      current = isRecurringTutoringDay(name, date) ? '補習' : '出席';
+    }
     const c = statusColors[current] || statusColors['出席'];
     const options = ATT_STATUSES.map(s=>`<option value="${s}" ${s===current?'selected':''}>${s}</option>`).join('');
     return `<div style="background:${c.bg};border:1px solid ${c.border};border-radius:8px;padding:8px 10px;">
@@ -4161,14 +4322,38 @@ function renderAttendanceRates(){
 
   if(rows.length===0){ box.innerHTML = `<div class="empty">尚無點名紀錄</div>`; return; }
 
-  box.innerHTML = rows.map(r=>{
-    const color = r.rate < 70 ? 'var(--clay)' : (r.rate < 90 ? 'var(--gold)' : 'var(--field)');
+  const lowRows = rows.filter(r=>r.rate<50);
+  const restRows = rows.filter(r=>r.rate>=50);
+
+  function rowHtml(r){
+    const color = r.rate < 50 ? 'var(--sun)' : (r.rate < 70 ? 'var(--clay)' : (r.rate < 90 ? 'var(--gold)' : 'var(--field)'));
     return `<div class="gauge-row">
       <div class="gauge-name">${r.name}</div>
       <div class="gauge-track"><div class="gauge-fill" style="width:${r.rate}%;background:${color};"></div></div>
-      <div class="gauge-num" style="color:${r.rate<70?'var(--clay)':'#20242B'};">${r.rate}%</div>
+      <div class="gauge-num" style="color:${r.rate<50?'var(--sun)':(r.rate<70?'var(--clay)':'var(--ink)')};">${r.rate}%</div>
     </div>`;
-  }).join('');
+  }
+
+  let html = '';
+  if(lowRows.length > 0){
+    html += `<div style="grid-column:1/-1;font-size:12px;font-weight:700;color:var(--sun);margin-bottom:2px;">⚠ 出席率低於50%（共${lowRows.length}人，需特別留意）</div>`;
+    html += lowRows.map(rowHtml).join('');
+  }
+  if(restRows.length > 0){
+    html += `<div style="grid-column:1/-1;margin:${lowRows.length?'10px':'0'} 0 4px;">
+      <button class="btn btn-ghost" onclick="toggleAttendanceRatesExpand()">${attendanceRatesExpanded ? '▲ 收合' : `▼ 顯示其餘 ${restRows.length} 位球員`}</button>
+    </div>`;
+    if(attendanceRatesExpanded){
+      html += restRows.map(rowHtml).join('');
+    }
+  }
+  box.innerHTML = html || `<div class="empty">尚無點名紀錄</div>`;
+}
+
+let attendanceRatesExpanded = false;
+function toggleAttendanceRatesExpand(){
+  attendanceRatesExpanded = !attendanceRatesExpanded;
+  renderAttendanceRates();
 }
 
 /* ---------- Init ---------- */
@@ -4192,6 +4377,7 @@ function renderAll(){
   renderFeeNotices();
   renderCleaningGroups();
   renderLeaveRequests();
+  renderTutoringList();
   renderPracticeNotices();
   renderHomeNav();
   renderHome();
@@ -5090,6 +5276,8 @@ async function init(){
   renderScheduleRosterGrid();
   renderFeeTargetGrid();
   renderPitchSessionList();
+  renderTutorWeekdayChips();
+  updateTutoringFrequencyFields();
   try{ startRealtimeSync(); }catch(e){ console.error('startRealtimeSync失敗', e); }
   try{ initFitnessSystem(); }catch(e){ console.error('體能檢測系統初始化失敗', e); }
 }
