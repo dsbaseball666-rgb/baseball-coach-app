@@ -646,13 +646,8 @@
         <div style="margin-top:14px;"><button class="btn btn-primary" onclick="addScheduleItem()">＋ 新增行程</button></div>
       </div>
 
-      <div class="card" style="padding:0;overflow-x:auto;">
-        <h2 style="padding:20px 22px 0;">賽事/行程列表</h2>
-        <table style="margin-top:8px;">
-          <thead><tr><th>日期</th><th>比賽類別</th><th>賽事名稱</th><th>用球類別</th><th>對手名稱</th><th>對手2</th><th>集合時間</th><th>穿著服裝</th><th>集合地點</th><th>出發時間</th><th>住宿</th><th>天數</th><th>住宿費用</th><th>備註</th><th></th></tr></thead>
-          <tbody id="schedule-table"></tbody>
-        </table>
-      </div>
+      <h2 style="margin-bottom:10px;">賽事/行程列表</h2>
+      <div id="schedule-table" style="display:grid;grid-template-columns:repeat(auto-fill, minmax(420px, 1fr));gap:14px;"></div>
     </div>
 
     <!-- ================= ATTENDANCE ================= -->
@@ -2793,21 +2788,21 @@ function renderScheduleRosterEditor(item){
       <span>${name}</span>
     </label>`;
   }).join('');
-  return `<div style="padding:14px;background:#FAF9F5;border-radius:8px;">
+  return `<div style="padding:14px;background:#15152F;border:1px solid var(--line);border-radius:8px;">
     <div style="font-size:12.5px;color:var(--grey);margin-bottom:8px;font-weight:700;">比賽選手名單（已選 ${roster.length} / 22 人）</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:6px;max-height:220px;overflow-y:auto;">${chips}</div>
   </div>`;
 }
 
 function renderSchedule(){
-  const tbody = document.getElementById('schedule-table');
+  const box = document.getElementById('schedule-table');
   const items = sortedSchedule();
   if(items.length===0){
-    tbody.innerHTML = `<tr><td colspan="15" class="empty">尚無安排，請於上方新增</td></tr>`;
+    box.innerHTML = `<div class="card"><div class="empty">尚無安排，請於上方新增</div></div>`;
     return;
   }
   const today = todayStr();
-  tbody.innerHTML = items.map(s=>{
+  box.innerHTML = items.map(s=>{
     const isPast = s.date < today;
     // 若舊資料的類型已不在目前清單中，仍將其加入選項以避免顯示空白
     const typeList = SCH_TYPES.includes(s.type) || !s.type ? SCH_TYPES : [s.type, ...SCH_TYPES];
@@ -2822,32 +2817,40 @@ function renderSchedule(){
     const ballOpts = ballList.map(b=>`<option value="${b}" ${b===s.ballType?'selected':''}>${b}</option>`).join('');
     const rosterCount = (s.roster||[]).length;
     const expanded = scheduleRosterExpanded.has(s.id);
+    const pillClass = SCH_TYPE_PILL[s.type] || 'pill-grey';
 
-    const mainRow = `<tr style="${isPast?'opacity:.5;':''}">
-      <td><input type="date" value="${s.date}" style="min-width:130px;" onchange="updateScheduleField('${s.id}','date',this.value); renderSchedule();"></td>
-      <td><select style="min-width:100px;" onchange="updateScheduleField('${s.id}','type',this.value); renderSchedule();">${opts}</select></td>
-      <td><input type="text" value="${s.competition||''}" style="min-width:110px;" placeholder="${s.type==='正式比賽'?'例如:金龍盃':'-'}" onchange="updateScheduleField('${s.id}','competition',this.value)"></td>
-      <td><select style="min-width:100px;" onchange="updateScheduleField('${s.id}','ballType',this.value)">${ballOpts}</select></td>
-      <td><input type="text" value="${s.opponent||''}" style="min-width:110px;" onchange="updateScheduleField('${s.id}','opponent',this.value)"></td>
-      <td><input type="text" value="${s.opponent2||''}" style="min-width:100px;" placeholder="${s.type==='循環賽'?'第二對手':'-'}" onchange="updateScheduleField('${s.id}','opponent2',this.value)"></td>
-      <td><select style="min-width:90px;" onchange="updateScheduleField('${s.id}','time',this.value)">${timeOpts}</select></td>
-      <td><select style="min-width:120px;" onchange="updateScheduleField('${s.id}','dress',this.value)">${dressOpts}</select></td>
-      <td><input type="text" value="${s.location||''}" style="min-width:90px;" onchange="updateScheduleField('${s.id}','location',this.value)"></td>
-      <td><select style="min-width:90px;" onchange="updateScheduleField('${s.id}','depart',this.value)">${departOpts}</select></td>
-      <td><select style="min-width:70px;" onchange="updateScheduleField('${s.id}','lodging',this.value); renderSchedule();" ${s.type!=='活動'?'disabled':''}>${lodgingOpts}</select></td>
-      <td><input type="number" value="${s.lodgingDays||''}" style="min-width:70px;" ${!isLodging?'disabled':''} onchange="updateScheduleField('${s.id}','lodgingDays',this.value)"></td>
-      <td><input type="number" value="${s.lodgingCost||''}" style="min-width:90px;" ${!isLodging?'disabled':''} onchange="updateScheduleField('${s.id}','lodgingCost',this.value)"></td>
-      <td><input type="text" value="${s.note||''}" style="min-width:120px;" onchange="updateScheduleField('${s.id}','note',this.value)"></td>
-      <td class="row-actions">
-        <button class="icon-btn" onclick="toggleScheduleRosterView('${s.id}')">${expanded?'收合':'名單'}(${rosterCount})</button>
-        <button class="icon-btn" onclick="shareScheduleItem('${s.id}')">分享</button>
-        ${isLodging ? `<button class="icon-btn" onclick="createFeeNoticeFromSchedule('${s.id}')">建立收費通知</button>` : ''}
-        <button class="icon-btn" onclick="deleteScheduleItem('${s.id}')">刪除</button>
-      </td>
-    </tr>`;
+    return `<div class="card" style="${isPast?'opacity:.55;':''}">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <input type="date" value="${s.date}" style="width:150px;font-weight:700;" onchange="updateScheduleField('${s.id}','date',this.value); renderSchedule();">
+          <select style="width:auto;" onchange="updateScheduleField('${s.id}','type',this.value); renderSchedule();">${opts}</select>
+          <span class="pill ${pillClass}">${s.type}</span>
+        </div>
+        <div class="row-actions">
+          <button class="icon-btn" onclick="toggleScheduleRosterView('${s.id}')">${expanded?'收合':'名單'}(${rosterCount})</button>
+          <button class="icon-btn" onclick="shareScheduleItem('${s.id}')">分享</button>
+          ${isLodging ? `<button class="icon-btn" onclick="createFeeNoticeFromSchedule('${s.id}')">建立收費通知</button>` : ''}
+          <button class="icon-btn" onclick="deleteScheduleItem('${s.id}')">刪除</button>
+        </div>
+      </div>
 
-    const rosterRow = expanded ? `<tr><td colspan="15" style="padding:0;">${renderScheduleRosterEditor(s)}</td></tr>` : '';
-    return mainRow + rosterRow;
+      <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(160px, 1fr));gap:10px;">
+        <div><label>賽事名稱</label><input type="text" value="${s.competition||''}" placeholder="${s.type==='正式比賽'?'例如:金龍盃':'-'}" onchange="updateScheduleField('${s.id}','competition',this.value)"></div>
+        <div><label>對手名稱</label><input type="text" value="${s.opponent||''}" onchange="updateScheduleField('${s.id}','opponent',this.value)"></div>
+        <div><label>對手2</label><input type="text" value="${s.opponent2||''}" placeholder="${s.type==='循環賽'?'第二對手':'-'}" onchange="updateScheduleField('${s.id}','opponent2',this.value)"></div>
+        <div><label>用球類別</label><select onchange="updateScheduleField('${s.id}','ballType',this.value)">${ballOpts}</select></div>
+        <div><label>集合時間</label><select onchange="updateScheduleField('${s.id}','time',this.value)">${timeOpts}</select></div>
+        <div><label>集合地點</label><input type="text" value="${s.location||''}" onchange="updateScheduleField('${s.id}','location',this.value)"></div>
+        <div><label>出發時間</label><select onchange="updateScheduleField('${s.id}','depart',this.value)">${departOpts}</select></div>
+        <div><label>穿著服裝</label><select onchange="updateScheduleField('${s.id}','dress',this.value)">${dressOpts}</select></div>
+        <div><label>住宿</label><select onchange="updateScheduleField('${s.id}','lodging',this.value); renderSchedule();" ${s.type!=='活動'?'disabled':''}>${lodgingOpts}</select></div>
+        ${isLodging ? `<div><label>住宿天數</label><input type="number" value="${s.lodgingDays||''}" onchange="updateScheduleField('${s.id}','lodgingDays',this.value)"></div>` : ''}
+        ${isLodging ? `<div><label>住宿費用</label><input type="number" value="${s.lodgingCost||''}" onchange="updateScheduleField('${s.id}','lodgingCost',this.value)"></div>` : ''}
+      </div>
+      <div style="margin-top:10px;"><label>備註</label><input type="text" value="${s.note||''}" onchange="updateScheduleField('${s.id}','note',this.value)"></div>
+
+      ${expanded ? `<div style="margin-top:12px;">${renderScheduleRosterEditor(s)}</div>` : ''}
+    </div>`;
   }).join('');
 }
 
