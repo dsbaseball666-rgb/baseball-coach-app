@@ -661,6 +661,15 @@
       <p class="page-desc">記錄每日出缺席，並可直接登記請假紀錄</p>
 
       <div class="card">
+        <h2>不練球的日子（設定後，出席率統計會自動排除，不會造成混亂）</h2>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;margin-bottom:10px;">
+          <div><label>日期</label><input type="date" id="restday-input"></div>
+          <button class="btn btn-ghost" onclick="addRestDay()">＋ 標記為不練球日</button>
+        </div>
+        <div id="restday-list" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
+      </div>
+
+      <div class="card">
         <div class="grid grid-3" style="align-items:end;">
           <div><label>點名日期</label><input type="date" id="att-date" onchange="renderAttendanceForm()"></div>
           <div style="display:flex;gap:8px;">
@@ -674,6 +683,17 @@
           <button class="btn btn-primary" onclick="saveAttendance()">💾 儲存本日點名</button>
           <button class="btn btn-ghost" onclick="shareAttendanceToLine()">📤 分享到LINE</button>
         </div>
+      </div>
+
+      <div class="card">
+        <h2>出缺席月表</h2>
+        <p class="page-desc" style="padding-left:0;margin-bottom:10px;">選擇月份產生完整月表，可直接匯出Excel留存</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;margin-bottom:14px;">
+          <div><label>月份</label><input type="month" id="monthly-select"></div>
+          <button class="btn btn-ghost" onclick="renderMonthlyAttendanceTable()">產生月表</button>
+          <button class="btn btn-primary" onclick="exportMonthlyAttendanceExcel()">⬇ 匯出這份月表</button>
+        </div>
+        <div id="monthly-table-wrap" style="overflow-x:auto;"></div>
       </div>
 
       <div class="card">
@@ -1299,6 +1319,7 @@ let state = {
   fieldingPositions: { '投手':[], '捕手':[], '一壘手':[], '二壘手':[], '三壘手':[], '游擊手':[], '左外野手':[], '中外野手':[], '右外野手':[] }, // { 守備位置: [球員姓名,...] }
   recurringTutoring: [], // {id,name,frequency:'weekly'|'monthly',weekdays:[0-6],monthDay:1-31,note}
   hiddenTabs: [], // 側邊欄被隱藏的分頁 key 清單
+  restDays: [], // 不練球的日子 ['2026-08-15', ...]，出席率統計會排除這些日期
 };
 
 // 目前在隊球員姓名清單（供各分頁下拉選單使用）
@@ -1488,6 +1509,8 @@ function setDatesToday(){
   ['pitch-date','injury-date','growth-date','att-date','fee-date','leave-start'].forEach(id=>{
     document.getElementById(id).value = todayStr();
   });
+  const monthlySel = document.getElementById('monthly-select');
+  if(monthlySel) monthlySel.value = todayStr().slice(0,7);
 }
 
 /* ---------- Tabs ---------- */
@@ -4172,6 +4195,40 @@ function editAttendanceDate(date){
   toast(`已載入 ${date} 的點名紀錄，修改後請按「儲存本日點名」`);
 }
 
+/* ---------- 不練球的日子 ---------- */
+function addRestDay(){
+  const date = document.getElementById('restday-input').value;
+  if(!date){ toast('請選擇日期'); return; }
+  if(!state.restDays.includes(date)){
+    state.restDays.push(date);
+    state.restDays.sort();
+  }
+  document.getElementById('restday-input').value = '';
+  saveState();
+  renderRestDayList();
+  renderAttendanceRates();
+  toast(`已標記 ${date} 為不練球日`);
+}
+
+function removeRestDay(date){
+  state.restDays = state.restDays.filter(d=>d!==date);
+  saveState();
+  renderRestDayList();
+  renderAttendanceRates();
+}
+
+function renderRestDayList(){
+  const box = document.getElementById('restday-list');
+  if(!box) return;
+  if(state.restDays.length===0){
+    box.innerHTML = `<span class="empty" style="padding:0;">尚未標記任何不練球日</span>`;
+    return;
+  }
+  box.innerHTML = state.restDays.map(d=>`
+    <span class="pill pill-grey" style="cursor:pointer;" onclick="removeRestDay('${d}')" title="點擊移除">${d} ✕</span>
+  `).join('');
+}
+
 function renderAttendanceForm(){
   const date = document.getElementById('att-date').value || todayStr();
   const existing = state.attendance[date] || {};
@@ -4195,6 +4252,84 @@ function renderAttendanceForm(){
       <select class="att-select" data-name="${name}" style="width:100%;font-size:12px;padding:5px 6px;" onchange="this.parentElement.style.background=({'出席':'var(--ok-bg)','請假':'#2A2A50','曠課':'var(--danger-bg)','傷病假':'var(--warn-bg)','補習':'#1E3350'})[this.value]; this.parentElement.style.borderColor=({'出席':'var(--field)','請假':'var(--line)','曠課':'var(--sun)','傷病假':'var(--gold)','補習':'#8FC3FF'})[this.value];">${options}</select>
     </div>`;
   }).join('');
+}
+
+const ATT_STATUS_ABBR = { '出席':'出', '請假':'假', '曠課':'曠', '傷病假':'傷', '補習':'補' };
+
+function renderMonthlyAttendanceTable(){
+  const sel = document.getElementById('monthly-select');
+  const yearMonth = sel.value || todayStr().slice(0,7);
+  sel.value = yearMonth;
+  const [year, month] = yearMonth.split('-').map(Number);
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const names = activePlayerNames();
+
+  let html = '<table style="font-size:11.5px;"><thead><tr><th style="position:sticky;left:0;background:var(--card);z-index:1;">姓名</th>';
+  for(let d=1; d<=daysInMonth; d++){
+    const dateStr = `${yearMonth}-${String(d).padStart(2,'0')}`;
+    const isRest = state.restDays.includes(dateStr);
+    html += `<th style="min-width:30px;text-align:center;${isRest?'color:var(--grey);':''}">${d}</th>`;
+  }
+  html += '</tr></thead><tbody>';
+
+  if(names.length===0){
+    html += `<tr><td colspan="${daysInMonth+1}" class="empty">尚無在隊球員</td></tr>`;
+  } else {
+    names.forEach(name=>{
+      html += `<tr><td style="position:sticky;left:0;background:var(--card);font-weight:700;white-space:nowrap;">${name}</td>`;
+      for(let d=1; d<=daysInMonth; d++){
+        const dateStr = `${yearMonth}-${String(d).padStart(2,'0')}`;
+        const isRest = state.restDays.includes(dateStr);
+        if(isRest){
+          html += `<td style="text-align:center;color:var(--grey);">休</td>`;
+        } else {
+          const rec = state.attendance[dateStr];
+          const status = rec ? rec[name] : null;
+          const abbr = status ? (ATT_STATUS_ABBR[status]||status) : '';
+          const color = status==='出席' ? 'var(--ok-text)' : (status ? 'var(--sun)' : 'var(--grey)');
+          html += `<td style="text-align:center;color:${color};">${abbr}</td>`;
+        }
+      }
+      html += '</tr>';
+    });
+  }
+  html += '</tbody></table>';
+  document.getElementById('monthly-table-wrap').innerHTML = html;
+}
+
+function exportMonthlyAttendanceExcel(){
+  if(typeof XLSX === 'undefined'){
+    toast('⚠ Excel匯出元件尚未載入完成，請稍後再試一次');
+    return;
+  }
+  const sel = document.getElementById('monthly-select');
+  const yearMonth = sel.value || todayStr().slice(0,7);
+  const [year, month] = yearMonth.split('-').map(Number);
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const names = activePlayerNames();
+
+  const rows = names.map(name=>{
+    const row = { 姓名: name };
+    for(let d=1; d<=daysInMonth; d++){
+      const dateStr = `${yearMonth}-${String(d).padStart(2,'0')}`;
+      const isRest = state.restDays.includes(dateStr);
+      let val = '';
+      if(isRest){
+        val = '休';
+      } else {
+        const rec = state.attendance[dateStr];
+        const status = rec ? rec[name] : null;
+        val = status ? (ATT_STATUS_ABBR[status]||status) : '';
+      }
+      row[`${d}日`] = val;
+    }
+    return row;
+  });
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.length?rows:[{提示:'尚無在隊球員'}]), `${yearMonth}出缺席`);
+  XLSX.writeFile(wb, `出缺席月表_${yearMonth}.xlsx`);
+  toast('已匯出月表');
 }
 
 function markAllAttendance(status){
@@ -4350,7 +4485,7 @@ function renderAttendanceHistory(){
 
 function renderAttendanceRates(){
   const box = document.getElementById('attendance-rates');
-  const dates = Object.keys(state.attendance);
+  const dates = Object.keys(state.attendance).filter(d=>!state.restDays.includes(d));
   if(dates.length===0){ box.innerHTML = `<div class="empty">尚無點名紀錄</div>`; return; }
 
   const names = activePlayerNames();
@@ -4428,6 +4563,8 @@ function renderAll(){
   renderSchedule();
   renderHomeSchedule();
   renderAttendanceForm();
+  renderRestDayList();
+  renderMonthlyAttendanceTable();
   renderAttendanceHistory();
   renderAttendanceRates();
   renderFeeNotices();
