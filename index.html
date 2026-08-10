@@ -512,20 +512,20 @@
     <div class="rail-title">東勢國中棒球隊</div>
     <div class="rail-sub">Coach Dashboard</div>
 
-    <button class="tab active" data-page="home"><span class="num">01</span>今日總覽</button>
-    <button class="tab" data-page="players"><span class="num">02</span>球員名單</button>
-    <button class="tab" data-page="positions"><span class="num">03</span>球員守備位子</button>
-    <button class="tab" data-page="attendance"><span class="num">04</span>點名/請假單</button>
-    <button class="tab" data-page="schedule"><span class="num">05</span>近期賽事</button>
-    <button class="tab" data-page="growth"><span class="num">06</span>成長管理</button>
-    <button class="tab" data-page="pitch"><span class="num">07</span>投手球數</button>
-    <button class="tab" data-page="injury"><span class="num">08</span>傷兵管理</button>
-    <button class="tab" data-page="fitness"><span class="num">09</span>體能檢測</button>
-    <button class="tab" data-page="cleaning"><span class="num">10</span>球場打掃分組</button>
-    <button class="tab" data-page="fees"><span class="num">11</span>收費通知</button>
-    <button class="tab" data-page="practice"><span class="num">12</span>練球通知</button>
+    <div id="rail-tabs"></div>
 
-    <div class="rail-foot" style="margin-top:auto;">資料透過雲端即時同步，任何裝置開啟同一網址都會自動更新。</div>
+    <div class="rail-foot" style="margin-top:auto;">
+      <button class="btn btn-ghost" style="width:100%;margin-bottom:10px;font-size:12px;" onclick="openTabManager()">⚙ 管理選單</button>
+      資料透過雲端即時同步，任何裝置開啟同一網址都會自動更新。
+    </div>
+  </div>
+
+  <div id="tab-manager-modal" style="display:none;position:fixed;inset:0;z-index:200;background:rgba(6,6,16,0.75);align-items:center;justify-content:center;padding:20px;">
+    <div style="background:linear-gradient(180deg, var(--card-2), var(--card));border:2px solid var(--frame);border-radius:4px;padding:22px;max-width:min(92vw,420px);max-height:80vh;overflow:auto;box-shadow:0 8px 0 rgba(0,0,0,0.35);">
+      <h2 style="margin:0 0 14px;font-family:'DotGothic16',sans-serif;font-weight:400;color:var(--gold-2);font-size:15px;">⚙ 管理選單顯示</h2>
+      <div id="tab-manager-list"></div>
+      <div style="margin-top:16px;text-align:right;"><button class="btn btn-primary" onclick="closeTabManager()">完成</button></div>
+    </div>
   </div>
 
   <div class="main">
@@ -748,19 +748,11 @@
         <h2>新增球員</h2>
         <div class="grid grid-2">
           <div><label>姓名</label><input type="text" id="new-player-name" placeholder="輸入姓名"></div>
-          <div><label>班級</label><input type="text" id="new-player-class" placeholder="選填"></div>
         </div>
         <div style="margin-top:14px;"><button class="btn btn-primary" onclick="addPlayer()">＋ 新增球員</button></div>
       </div>
 
-      <div class="card" style="padding:0;overflow-x:auto;">
-        <table>
-          <thead><tr>
-            <th>姓名</th><th>班級</th><th>組別</th><th>職務</th><th>狀態</th><th></th>
-          </tr></thead>
-          <tbody id="players-table"></tbody>
-        </table>
-      </div>
+      <div id="players-table" style="display:grid;grid-template-columns:repeat(auto-fill, minmax(220px, 1fr));gap:12px;"></div>
     </div>
 
     <!-- ================= FIELDING POSITIONS (球員守備位子) ================= -->
@@ -1306,6 +1298,7 @@ let state = {
   practiceNotices: [], // {id,date,time,location,dress,note}
   fieldingPositions: { '投手':[], '捕手':[], '一壘手':[], '二壘手':[], '三壘手':[], '游擊手':[], '左外野手':[], '中外野手':[], '右外野手':[] }, // { 守備位置: [球員姓名,...] }
   recurringTutoring: [], // {id,name,frequency:'weekly'|'monthly',weekdays:[0-6],monthDay:1-31,note}
+  hiddenTabs: [], // 側邊欄被隱藏的分頁 key 清單
 };
 
 // 目前在隊球員姓名清單（供各分頁下拉選單使用）
@@ -1498,19 +1491,71 @@ function setDatesToday(){
 }
 
 /* ---------- Tabs ---------- */
-document.querySelectorAll('.tab').forEach(btn=>{
-  btn.addEventListener('click', ()=>{
-    switchToTab(btn.dataset.page);
-  });
-});
+const TABS_CONFIG = [
+  { page:'home',       num:'01', label:'今日總覽' },
+  { page:'players',    num:'02', label:'球員名單' },
+  { page:'positions',  num:'03', label:'球員守備位子' },
+  { page:'attendance', num:'04', label:'點名/請假單' },
+  { page:'schedule',   num:'05', label:'近期賽事' },
+  { page:'growth',     num:'06', label:'成長管理' },
+  { page:'pitch',      num:'07', label:'投手球數' },
+  { page:'injury',     num:'08', label:'傷兵管理' },
+  { page:'fitness',    num:'09', label:'體能檢測' },
+  { page:'cleaning',   num:'10', label:'球場打掃分組' },
+  { page:'fees',       num:'11', label:'收費通知' },
+  { page:'practice',   num:'12', label:'練球通知' },
+];
+
+let currentPage = 'home';
+
+function renderRailTabs(){
+  const box = document.getElementById('rail-tabs');
+  if(!box) return;
+  const hidden = state.hiddenTabs || [];
+  box.innerHTML = TABS_CONFIG.filter(t=>!hidden.includes(t.page)).map(t=>`
+    <button class="tab${t.page===currentPage?' active':''}" data-page="${t.page}" onclick="switchToTab('${t.page}')">
+      <span class="num">${t.num}</span>${t.label}
+    </button>`).join('');
+}
 
 function switchToTab(pageName){
-  document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));
+  currentPage = pageName;
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
-  const btn = document.querySelector(`.tab[data-page="${pageName}"]`);
-  if(btn) btn.classList.add('active');
   const page = document.getElementById('page-'+pageName);
   if(page) page.classList.add('active');
+  renderRailTabs();
+}
+
+/* ---------- 選單管理：隱藏/顯示側邊欄項目 ---------- */
+function openTabManager(){
+  renderTabManagerList();
+  document.getElementById('tab-manager-modal').style.display = 'flex';
+}
+function closeTabManager(){
+  document.getElementById('tab-manager-modal').style.display = 'none';
+}
+function toggleTabVisibility(page, visible){
+  if(!state.hiddenTabs) state.hiddenTabs = [];
+  if(visible){
+    state.hiddenTabs = state.hiddenTabs.filter(p=>p!==page);
+  } else {
+    if(!state.hiddenTabs.includes(page)) state.hiddenTabs.push(page);
+  }
+  saveState();
+  renderRailTabs();
+  renderTabManagerList();
+}
+function renderTabManagerList(){
+  const box = document.getElementById('tab-manager-list');
+  if(!box) return;
+  const hidden = state.hiddenTabs || [];
+  box.innerHTML = TABS_CONFIG.map(t=>{
+    const visible = !hidden.includes(t.page);
+    return `<label style="display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px solid var(--line);cursor:pointer;">
+      <input type="checkbox" ${visible?'checked':''} style="width:16px;height:16px;" onchange="toggleTabVisibility('${t.page}', this.checked)">
+      <span style="font-size:13.5px;">${t.num} ${t.label}</span>
+    </label>`;
+  }).join('');
 }
 
 /* ---------- Players / ratings ---------- */
@@ -1526,11 +1571,9 @@ function starHtml(playerId, skill){
 
 function addPlayer(){
   const name = document.getElementById('new-player-name').value.trim();
-  const cls = document.getElementById('new-player-class').value.trim();
   if(!name){ toast('請輸入球員姓名'); return; }
-  state.players.push({ id: uid(), name, class: cls, status:'在隊', group:'' });
+  state.players.push({ id: uid(), name, class: '', status:'在隊', group:'' });
   document.getElementById('new-player-name').value = '';
-  document.getElementById('new-player-class').value = '';
   saveState();
   fillNameSelects();
   renderPlayers();
@@ -1781,12 +1824,12 @@ function removePlayerFromPosition(pos, name){
 }
 
 function renderPlayers(){
-  const tbody = document.getElementById('players-table');
+  const box = document.getElementById('players-table');
   if(state.players.length===0){
-    tbody.innerHTML = `<tr><td colspan="6" class="empty">尚無球員資料，請先新增</td></tr>`;
+    box.innerHTML = `<div class="card"><div class="empty">尚無球員資料，請先新增</div></div>`;
     return;
   }
-  tbody.innerHTML = state.players.map(p=>{
+  box.innerHTML = state.players.map(p=>{
     const statusOptions = ['在隊','請假中','退隊'].map(s=>`<option value="${s}" ${s===p.status?'selected':''}>${s}</option>`).join('');
     const groupOptions = `<option value="" ${!p.group?'selected':''}>未分組</option>` +
       state.playerGroups.map(g=>`<option value="${g}" ${g===p.group?'selected':''}>${g}</option>`).join('');
@@ -1794,14 +1837,16 @@ function renderPlayers(){
     const badgesHtml = badges.length
       ? badges.map(b=>`<span class="pill pill-warn" style="margin:1px;">${b}</span>`).join('')
       : `<span style="color:var(--grey);font-size:12px;">-</span>`;
-    return `<tr>
-      <td><input type="text" value="${p.name}" style="min-width:80px;font-weight:600;" onchange="updatePlayerField('${p.id}','name',this.value)"></td>
-      <td><input type="text" value="${p.class||''}" style="min-width:70px;" onchange="updatePlayerField('${p.id}','class',this.value)"></td>
-      <td><select style="min-width:90px;" onchange="updatePlayerField('${p.id}','group',this.value)">${groupOptions}</select></td>
-      <td>${badgesHtml}</td>
-      <td><select style="min-width:90px;" onchange="updatePlayerField('${p.id}','status',this.value)">${statusOptions}</select></td>
-      <td><button class="icon-btn" onclick="deletePlayer('${p.id}')">刪除</button></td>
-    </tr>`;
+    return `<div class="card" style="padding:14px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+        ${chibiSpriteSVG(p.name, 32)}
+        <input type="text" value="${p.name}" style="font-weight:700;flex:1;min-width:0;" onchange="updatePlayerField('${p.id}','name',this.value)">
+        <button class="icon-btn" onclick="deletePlayer('${p.id}')">刪除</button>
+      </div>
+      <div style="margin-bottom:8px;"><label>組別</label><select onchange="updatePlayerField('${p.id}','group',this.value)">${groupOptions}</select></div>
+      <div style="margin-bottom:8px;"><label>狀態</label><select onchange="updatePlayerField('${p.id}','status',this.value)">${statusOptions}</select></div>
+      <div><label>職務</label><div>${badgesHtml}</div></div>
+    </div>`;
   }).join('');
 }
 
@@ -2378,7 +2423,7 @@ function exportToExcel(){
   const skills = ['守備','打擊','跑壘','投球','態度','體能'];
   const ratingRows = state.players.map(p=>{
     const r = state.ratings[p.id] || {};
-    const row = {姓名:p.name, 班級:p.class||'', 組別:p.group||'未分組', 職務:playerBadges(p.name).join('、')||'', 守備位置:playerPositions(p.name).join('、')||'', 狀態:p.status};
+    const row = {姓名:p.name, 組別:p.group||'未分組', 職務:playerBadges(p.name).join('、')||'', 守備位置:playerPositions(p.name).join('、')||'', 狀態:p.status};
     skills.forEach(sk=>row[sk]=r[sk]||3);
     row['綜合平均'] = (skills.reduce((s,k)=>s+(r[k]||3),0)/skills.length).toFixed(2);
     return row;
@@ -2967,33 +3012,42 @@ function addFeeTargetPlayer(noticeId, selectEl){
 function renderFeeRosterTable(notice){
   const roster = feeNoticeRoster(notice);
   const payments = notice.payments || {};
-  const rows = roster.map(name=>{
+  const boxes = roster.map(name=>{
     const p = payments[name] || { status:'未繳', amount:0, date:'' };
     const opts = FEE_PAY_STATUSES.map(s=>`<option value="${s}" ${s===p.status?'selected':''}>${s}</option>`).join('');
     const hasPaid = p.status === '已繳' || p.status === '已繳部分';
-    return `<tr>
-      <td style="font-weight:600;">${name}</td>
-      <td><select onchange="updateFeePayment('${notice.id}','${name}','status',this.value)">${opts}</select></td>
-      <td><input type="number" value="${p.amount||0}" style="max-width:100px;" onchange="updateFeePayment('${notice.id}','${name}','amount',this.value)"></td>
-      <td><input type="date" value="${p.date||''}" style="max-width:150px;" onchange="updateFeePayment('${notice.id}','${name}','date',this.value)"></td>
-      <td class="row-actions">
-        ${hasPaid ? `<button class="icon-btn" onclick="sendPaymentReceipt('${notice.id}','${name}')">📤 發送收款通知</button>` : ''}
+    const statusColor = p.status==='已繳' ? 'var(--field)' : (p.status==='已繳部分' ? 'var(--gold)' : 'var(--sun)');
+    return `<div style="background:#15152F;border:1px solid ${statusColor};border-radius:8px;padding:12px 14px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <span style="font-weight:700;font-size:14.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${name}</span>
         <button class="icon-btn" onclick="removeFeeTargetPlayer('${notice.id}','${name}')">移除</button>
-      </td>
-    </tr>`;
+      </div>
+      <div style="margin-bottom:8px;">
+        <label style="font-size:10.5px;">繳費狀態</label>
+        <select style="font-size:13px;" onchange="updateFeePayment('${notice.id}','${name}','status',this.value)">${opts}</select>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:4px;">
+        <div style="flex:1;">
+          <label style="font-size:10.5px;">已繳金額</label>
+          <input type="number" value="${p.amount||0}" style="font-size:13px;" onchange="updateFeePayment('${notice.id}','${name}','amount',this.value)">
+        </div>
+        <div style="flex:1;">
+          <label style="font-size:10.5px;">繳費日期</label>
+          <input type="date" value="${p.date||''}" style="font-size:12.5px;" onchange="updateFeePayment('${notice.id}','${name}','date',this.value)">
+        </div>
+      </div>
+      ${hasPaid ? `<button class="icon-btn" onclick="sendPaymentReceipt('${notice.id}','${name}')" style="width:100%;text-align:center;margin-top:8px;">📤 發送收款通知</button>` : ''}
+    </div>`;
   }).join('');
 
   const notInRoster = activePlayerNames().filter(n=>!roster.includes(n));
   const addOptions = `<option value="">＋ 新增收款對象...</option>` + notInRoster.map(n=>`<option value="${n}">${n}</option>`).join('');
-  const addRow = notInRoster.length ? `<div style="margin-top:10px;display:flex;gap:8px;align-items:center;">
+  const addRow = notInRoster.length ? `<div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
     <select style="max-width:200px;" onchange="addFeeTargetPlayer('${notice.id}', this); this.value='';">${addOptions}</select>
     <button class="btn btn-ghost" onclick="feeTargetAllForNotice('${notice.id}')">全選（加入全體在隊球員）</button>
   </div>` : '';
 
-  return `<table style="margin-top:10px;">
-    <thead><tr><th>姓名</th><th>狀態</th><th>已繳金額</th><th>繳費日期</th><th></th></tr></thead>
-    <tbody>${rows}</tbody>
-  </table>${addRow}`;
+  return `<div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(220px, 1fr));gap:10px;margin-top:10px;">${boxes}</div>${addRow}`;
 }
 
 function feeTargetAllForNotice(noticeId){
@@ -4361,6 +4415,7 @@ function toggleAttendanceRatesExpand(){
 function renderAll(){
   ensureDefaultPlayers();
   fillNameSelects();
+  renderRailTabs();
   renderPlayerGroupsManage();
   renderSpecialRolesManage();
   renderPitcherRosterManage();
