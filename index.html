@@ -687,13 +687,11 @@
 
       <div class="card">
         <h2>出缺席月表</h2>
-        <p class="page-desc" style="padding-left:0;margin-bottom:10px;">選擇月份產生完整月表，可直接匯出Excel留存</p>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;margin-bottom:14px;">
+        <p class="page-desc" style="padding-left:0;margin-bottom:10px;">選擇月份，直接匯出Excel留存（不會在畫面上顯示整月表格，避免版面混亂）</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;">
           <div><label>月份</label><input type="month" id="monthly-select"></div>
-          <button class="btn btn-ghost" onclick="renderMonthlyAttendanceTable()">產生月表</button>
           <button class="btn btn-primary" onclick="exportMonthlyAttendanceExcel()">⬇ 匯出這份月表</button>
         </div>
-        <div id="monthly-table-wrap" style="overflow-x:auto;"></div>
       </div>
 
       <div class="card">
@@ -4256,47 +4254,6 @@ function renderAttendanceForm(){
 
 const ATT_STATUS_ABBR = { '出席':'出', '請假':'假', '曠課':'曠', '傷病假':'傷', '補習':'補' };
 
-function renderMonthlyAttendanceTable(){
-  const sel = document.getElementById('monthly-select');
-  const yearMonth = sel.value || todayStr().slice(0,7);
-  sel.value = yearMonth;
-  const [year, month] = yearMonth.split('-').map(Number);
-  const daysInMonth = new Date(year, month, 0).getDate();
-  const names = activePlayerNames();
-
-  let html = '<table style="font-size:11.5px;"><thead><tr><th style="position:sticky;left:0;background:var(--card);z-index:1;">姓名</th>';
-  for(let d=1; d<=daysInMonth; d++){
-    const dateStr = `${yearMonth}-${String(d).padStart(2,'0')}`;
-    const isRest = state.restDays.includes(dateStr);
-    html += `<th style="min-width:30px;text-align:center;${isRest?'color:var(--grey);':''}">${d}</th>`;
-  }
-  html += '</tr></thead><tbody>';
-
-  if(names.length===0){
-    html += `<tr><td colspan="${daysInMonth+1}" class="empty">尚無在隊球員</td></tr>`;
-  } else {
-    names.forEach(name=>{
-      html += `<tr><td style="position:sticky;left:0;background:var(--card);font-weight:700;white-space:nowrap;">${name}</td>`;
-      for(let d=1; d<=daysInMonth; d++){
-        const dateStr = `${yearMonth}-${String(d).padStart(2,'0')}`;
-        const isRest = state.restDays.includes(dateStr);
-        if(isRest){
-          html += `<td style="text-align:center;color:var(--grey);">休</td>`;
-        } else {
-          const rec = state.attendance[dateStr];
-          const status = rec ? rec[name] : null;
-          const abbr = status ? (ATT_STATUS_ABBR[status]||status) : '';
-          const color = status==='出席' ? 'var(--ok-text)' : (status ? 'var(--sun)' : 'var(--grey)');
-          html += `<td style="text-align:center;color:${color};">${abbr}</td>`;
-        }
-      }
-      html += '</tr>';
-    });
-  }
-  html += '</tbody></table>';
-  document.getElementById('monthly-table-wrap').innerHTML = html;
-}
-
 function exportMonthlyAttendanceExcel(){
   if(typeof XLSX === 'undefined'){
     toast('⚠ Excel匯出元件尚未載入完成，請稍後再試一次');
@@ -4564,7 +4521,6 @@ function renderAll(){
   renderHomeSchedule();
   renderAttendanceForm();
   renderRestDayList();
-  renderMonthlyAttendanceTable();
   renderAttendanceHistory();
   renderAttendanceRates();
   renderFeeNotices();
