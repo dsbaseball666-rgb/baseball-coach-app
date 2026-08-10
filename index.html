@@ -963,6 +963,7 @@
       <div id="practice-list" class="card-grid"></div>
     </div>
 
+
     <div class="page" id="page-fitness">
 <div class="wrap">
 
@@ -5282,4 +5283,25 @@ async function init(){
   try{ initFitnessSystem(); }catch(e){ console.error('體能檢測系統初始化失敗', e); }
 }
 init();
+
+/* ---------- 分頁從背景切回前景時，自動重新抓取雲端最新資料 ----------
+   避免手機鎖屏/分頁被系統暫停太久，回來後用「睡著前的舊資料」覆蓋掉這段期間別人新增的資料 */
+let lastVisibleResync = Date.now();
+document.addEventListener('visibilitychange', async ()=>{
+  if(document.visibilityState === 'visible'){
+    const idleMs = Date.now() - lastVisibleResync;
+    // 背景超過30秒才重新同步，避免短暫切換也頻繁重抓
+    if(idleMs > 30000 && firebaseReady){
+      try{
+        await loadState();
+        renderAll();
+        toast('已自動同步最新資料');
+      }catch(e){
+        console.error('重新同步失敗', e);
+      }
+    }
+  } else {
+    lastVisibleResync = Date.now();
+  }
+});
 </script>
