@@ -799,7 +799,7 @@
         <div style="margin-top:14px;"><button class="btn btn-primary" onclick="addIntraSquadSession()">＋ 新增場次</button></div>
       </div>
 
-      <div id="intrasquad-list" style="display:grid;grid-template-columns:repeat(auto-fill, minmax(460px, 1fr));gap:14px;"></div>
+      <div id="intrasquad-list" style="display:grid;grid-template-columns:repeat(auto-fill, minmax(580px, 1fr));gap:14px;"></div>
     </div>
 
     <!-- ================= PITCH COUNT ================= -->
@@ -1563,6 +1563,16 @@ function switchToTab(pageName){
   renderRailTabs();
 }
 
+// 從隊內分組賽的先發投手，快速跳轉到投手球數頁面並預填球員與日期
+function jumpToPitchRecord(name, date){
+  switchToTab('pitch');
+  const dateEl = document.getElementById('pitch-date');
+  const nameEl = document.getElementById('pitch-name');
+  if(dateEl) dateEl.value = date || todayStr();
+  if(nameEl) nameEl.value = name;
+  toast(`已跳轉並帶入 ${name}，請於下方登記本場投球數`);
+}
+
 /* ---------- 選單管理：隱藏/顯示側邊欄項目 ---------- */
 function openTabManager(){
   renderTabManagerList();
@@ -1902,6 +1912,12 @@ function normalizeIntraSquadPlayer(p){
   return { note:'', position:'', battingOrder:'', ...p };
 }
 
+const INTRASQUAD_POSITION_OPTIONS = [...POSITION_LAYOUT.map(p=>p.name), '指定打擊', '指定守備'];
+
+function renumberIntraSquadBattingOrder(list){
+  list.forEach((p,i)=>{ p.battingOrder = i+1; });
+}
+
 function addPlayerToIntraSquadSide(sessionId, side, name){
   if(!name) return;
   const session = state.intraSquadSessions.find(s=>s.id===sessionId);
@@ -1912,6 +1928,7 @@ function addPlayerToIntraSquadSide(sessionId, side, name){
     // 預設守備位置：參考「球員守備位子」頁面已設定的位置
     const suggestedPositions = playerPositions(name);
     session[key].push({ name, note:'', position: suggestedPositions[0] || '', battingOrder:'' });
+    renumberIntraSquadBattingOrder(session[key]); // 棒次自動依加入順序排好，不用手動選
   }
   saveState();
   renderIntraSquadTeams();
@@ -1922,6 +1939,7 @@ function removePlayerFromIntraSquadSide(sessionId, side, name){
   if(!session) return;
   const key = side==='A' ? 'teamAPlayers' : 'teamBPlayers';
   session[key] = (session[key]||[]).map(normalizeIntraSquadPlayer).filter(p=>p.name!==name);
+  renumberIntraSquadBattingOrder(session[key]); // 移除後重新排序，不留空號
   saveState();
   renderIntraSquadTeams();
 }
@@ -1934,6 +1952,22 @@ function updateIntraSquadPlayerField(sessionId, side, name, field, value){
   const p = session[key].find(p=>p.name===name);
   if(p) p[field] = value;
   saveState();
+  renderIntraSquadTeams();
+}
+
+function moveIntraSquadPlayer(sessionId, side, name, dir){
+  const session = state.intraSquadSessions.find(s=>s.id===sessionId);
+  if(!session) return;
+  const key = side==='A' ? 'teamAPlayers' : 'teamBPlayers';
+  const list = (session[key]||[]).map(normalizeIntraSquadPlayer);
+  const idx = list.findIndex(p=>p.name===name);
+  const swapIdx = idx + dir;
+  if(idx<0 || swapIdx<0 || swapIdx>=list.length) return;
+  [list[idx], list[swapIdx]] = [list[swapIdx], list[idx]];
+  renumberIntraSquadBattingOrder(list);
+  session[key] = list;
+  saveState();
+  renderIntraSquadTeams();
 }
 
 function renderIntraSquadSideBox(session, side){
@@ -1945,33 +1979,37 @@ function renderIntraSquadSideBox(session, side){
   const otherNames = otherPlayers.map(p=>p.name);
   const available = activePlayerNames().filter(n=>!playerNames.includes(n) && !otherNames.includes(n));
   const addOptions = `<option value="">＋ 新增球員...</option>` + available.map(n=>`<option value="${n}">${n}</option>`).join('');
-  const positionOptions = ['', ...POSITION_LAYOUT.map(p=>p.name)];
-  const rows = players.map(p=>{
-    const posOpts = positionOptions.map(pos=>`<option value="${pos}" ${pos===p.position?'selected':''}>${pos||'（未設定）'}</option>`).join('');
-    const orderOpts = [''].concat(Array.from({length:12},(_,i)=>String(i+1))).map(n=>`<option value="${n}" ${n===String(p.battingOrder)?'selected':''}>${n||'-'}</option>`).join('');
-    return `<div style="background:#15152F;border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:6px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-        <span style="font-weight:700;font-size:13.5px;">${p.name}</span>
-        <span onclick="removePlayerFromIntraSquadSide('${session.id}','${side}','${p.name}')" style="cursor:pointer;color:var(--grey);font-size:12px;">移除 ✕</span>
-      </div>
-      <div style="display:flex;gap:6px;margin-bottom:6px;">
-        <div style="flex:1;">
-          <label style="font-size:10px;">棒次</label>
-          <select style="font-size:12.5px;" onchange="updateIntraSquadPlayerField('${session.id}','${side}','${p.name}','battingOrder',this.value)">${orderOpts}</select>
-        </div>
-        <div style="flex:1.4;">
-          <label style="font-size:10px;">先發位子</label>
-          <select style="font-size:12.5px;" onchange="updateIntraSquadPlayerField('${session.id}','${side}','${p.name}','position',this.value)">${posOpts}</select>
-        </div>
-      </div>
-      <input type="text" value="${p.note||''}" placeholder="比賽內容（例如：3打數2安打、守備無失誤）" style="font-size:12.5px;" onchange="updateIntraSquadPlayerField('${session.id}','${side}','${p.name}','note',this.value)">
-    </div>`;
-  }).join('') || `<span class="empty" style="padding:0;">尚未指派</span>`;
 
-  return `<div style="flex:1;min-width:240px;">
+  const lineupRows = players.map((p,i)=>{
+    const posOpts = ['', ...INTRASQUAD_POSITION_OPTIONS].map(pos=>`<option value="${pos}" ${pos===p.position?'selected':''}>${pos||'（未設定）'}</option>`).join('');
+    const isPitcher = p.position==='投手' && state.pitcherRoster.includes(p.name);
+    return `<tr>
+      <td style="text-align:center;font-weight:700;color:var(--gold-2);width:36px;">
+        ${p.battingOrder}
+        <div style="display:flex;flex-direction:column;font-size:9px;line-height:1;margin-top:2px;">
+          <span onclick="moveIntraSquadPlayer('${session.id}','${side}','${p.name}',-1)" style="cursor:pointer;">▲</span>
+          <span onclick="moveIntraSquadPlayer('${session.id}','${side}','${p.name}',1)" style="cursor:pointer;">▼</span>
+        </div>
+      </td>
+      <td style="font-weight:700;">${p.name}${isPitcher ? ' <span class="pill pill-warn" style="font-size:9px;padding:1px 6px;">投</span>' : ''}</td>
+      <td><select style="font-size:12px;min-width:100px;" onchange="updateIntraSquadPlayerField('${session.id}','${side}','${p.name}','position',this.value)">${posOpts}</select></td>
+      <td><input type="text" value="${p.note||''}" placeholder="比賽內容" style="font-size:12px;min-width:120px;" onchange="updateIntraSquadPlayerField('${session.id}','${side}','${p.name}','note',this.value)"></td>
+      <td style="white-space:nowrap;">
+        ${isPitcher ? `<button class="icon-btn" onclick="jumpToPitchRecord('${p.name}','${session.date}')" title="跳到投手球數頁面記錄">🎯 記錄投球</button>` : ''}
+        <span onclick="removePlayerFromIntraSquadSide('${session.id}','${side}','${p.name}')" style="cursor:pointer;color:var(--grey);font-size:12px;">移除 ✕</span>
+      </td>
+    </tr>`;
+  }).join('');
+
+  const lineupTable = players.length ? `<table style="font-size:12.5px;margin-bottom:10px;">
+    <thead><tr><th>棒次</th><th>姓名</th><th>守備位置</th><th>比賽內容</th><th></th></tr></thead>
+    <tbody>${lineupRows}</tbody>
+  </table>` : `<div class="empty" style="padding:8px 0;">尚未指派任何球員</div>`;
+
+  return `<div style="flex:1;min-width:280px;">
     <input type="text" value="${name}" style="font-weight:700;margin-bottom:8px;" onchange="updateIntraSquadSessionField('${session.id}','${isA?'teamAName':'teamBName'}',this.value)">
-    <div style="font-size:11.5px;color:var(--grey);margin-bottom:6px;">已選 ${players.length} 人</div>
-    <div style="margin-bottom:8px;">${rows}</div>
+    <div style="font-size:11.5px;color:var(--grey);margin-bottom:8px;">已選 ${players.length} 人（棒次自動排序，可用 ▲▼ 調整順序）</div>
+    <div style="overflow-x:auto;">${lineupTable}</div>
     <select style="max-width:100%;" onchange="addPlayerToIntraSquadSide('${session.id}','${side}', this.value); this.value='';">${addOptions}</select>
   </div>`;
 }
