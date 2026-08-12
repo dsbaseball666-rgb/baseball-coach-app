@@ -786,17 +786,20 @@
     <!-- ================= INTRA-SQUAD TEAMS (隊內分組賽名單) ================= -->
     <div class="page" id="page-intrasquad">
       <h1 class="page-title">隊內分組賽名單</h1>
-      <p class="page-desc">建立隊內分組賽的隊伍，一位球員只能被分到一隊，選過就不會再出現在其他隊伍名單中</p>
+      <p class="page-desc">每場比賽獨立建立兩隊分組，同一場次內選過的球員不會重複出現在另一隊；不同場次互不影響</p>
 
       <div class="card">
-        <h2>新增隊伍</h2>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;">
-          <div style="flex:1;min-width:160px;"><label>隊伍名稱</label><input type="text" id="intrasquad-name-input" placeholder="例如：紅隊、藍隊"></div>
-          <button class="btn btn-primary" onclick="addIntraSquadTeam()">＋ 新增隊伍</button>
+        <h2>新增比賽場次</h2>
+        <div class="grid grid-3">
+          <div><label>日期</label><input type="date" id="intrasquad-date-input"></div>
+          <div><label>A隊名稱</label><input type="text" id="intrasquad-teamA-input" placeholder="例如：紅隊"></div>
+          <div><label>B隊名稱</label><input type="text" id="intrasquad-teamB-input" placeholder="例如：藍隊"></div>
         </div>
+        <div style="margin-top:14px;"><label>備註</label><input type="text" id="intrasquad-note-input" placeholder="選填，例如：隊內紅白賽"></div>
+        <div style="margin-top:14px;"><button class="btn btn-primary" onclick="addIntraSquadSession()">＋ 新增場次</button></div>
       </div>
 
-      <div id="intrasquad-list" class="card-grid"></div>
+      <div id="intrasquad-list" style="display:grid;grid-template-columns:repeat(auto-fill, minmax(460px, 1fr));gap:14px;"></div>
     </div>
 
     <!-- ================= PITCH COUNT ================= -->
@@ -1329,7 +1332,7 @@ let state = {
   recurringTutoring: [], // {id,name,frequency:'weekly'|'monthly',weekdays:[0-6],monthDay:1-31,note}
   hiddenTabs: [], // 側邊欄被隱藏的分頁 key 清單
   restDays: [], // 不練球的日子 ['2026-08-15', ...]，出席率統計會排除這些日期
-  intraSquadTeams: [], // [{id, name, players:[球員姓名,...]}] 隊內分組賽,一位球員只能在一隊
+  intraSquadSessions: [], // [{id, date, note, teamAName, teamBName, teamAPlayers:[], teamBPlayers:[]}] 每場比賽獨立分兩隊,不受其他場次限制
 };
 
 // 目前在隊球員姓名清單（供各分頁下拉選單使用）
@@ -1516,7 +1519,7 @@ function fillNameSelects(){
 }
 
 function setDatesToday(){
-  ['pitch-date','injury-date','growth-date','att-date','fee-date','leave-start'].forEach(id=>{
+  ['pitch-date','injury-date','growth-date','att-date','fee-date','leave-start','intrasquad-date-input'].forEach(id=>{
     document.getElementById(id).value = todayStr();
   });
   const monthlySel = document.getElementById('monthly-select');
@@ -1857,85 +1860,144 @@ function removePlayerFromPosition(pos, name){
   renderPositionsDetail();
 }
 
-/* ---------- 隊內分組賽名單 ---------- */
-function intraSquadAssignedPlayers(exceptTeamId){
-  const assigned = new Set();
-  state.intraSquadTeams.forEach(team=>{
-    if(team.id === exceptTeamId) return;
-    (team.players||[]).forEach(n=>assigned.add(n));
+/* ---------- 隊內分組賽名單（依比賽場次，每場獨立分兩隊） ---------- */
+function addIntraSquadSession(){
+  const dateInput = document.getElementById('intrasquad-date-input');
+  const noteInput = document.getElementById('intrasquad-note-input');
+  const teamAInput = document.getElementById('intrasquad-teamA-input');
+  const teamBInput = document.getElementById('intrasquad-teamB-input');
+  const date = dateInput.value || todayStr();
+  const note = noteInput.value.trim();
+  const teamAName = teamAInput.value.trim() || 'A隊';
+  const teamBName = teamBInput.value.trim() || 'B隊';
+
+  state.intraSquadSessions.unshift({
+    id: uid(), date, note, teamAName, teamBName, teamAPlayers: [], teamBPlayers: []
   });
-  return assigned;
-}
-
-function addIntraSquadTeam(){
-  const nameInput = document.getElementById('intrasquad-name-input');
-  const name = nameInput.value.trim();
-  if(!name){ toast('請輸入隊伍名稱'); return; }
-  state.intraSquadTeams.push({ id: uid(), name, players: [] });
-  nameInput.value = '';
+  noteInput.value = '';
+  teamAInput.value = '';
+  teamBInput.value = '';
   saveState();
   renderIntraSquadTeams();
-  toast(`已建立隊伍：${name}`);
+  toast(`已建立 ${date} 的分組場次`);
 }
 
-function deleteIntraSquadTeam(teamId){
-  state.intraSquadTeams = state.intraSquadTeams.filter(t=>t.id!==teamId);
+function deleteIntraSquadSession(sessionId){
+  state.intraSquadSessions = state.intraSquadSessions.filter(s=>s.id!==sessionId);
   saveState();
   renderIntraSquadTeams();
 }
 
-function updateIntraSquadTeamName(teamId, name){
-  const team = state.intraSquadTeams.find(t=>t.id===teamId);
-  if(!team) return;
-  team.name = name;
+function updateIntraSquadSessionField(sessionId, field, value){
+  const session = state.intraSquadSessions.find(s=>s.id===sessionId);
+  if(!session) return;
+  session[field] = value;
   saveState();
+  renderIntraSquadTeams();
 }
 
-function addPlayerToIntraSquadTeam(teamId, name){
+// 向下相容：舊資料若是純姓名字串陣列，轉成 {name, note, position, battingOrder} 物件格式
+function normalizeIntraSquadPlayer(p){
+  if(typeof p === 'string') return { name: p, note: '', position: '', battingOrder: '' };
+  return { note:'', position:'', battingOrder:'', ...p };
+}
+
+function addPlayerToIntraSquadSide(sessionId, side, name){
   if(!name) return;
-  const team = state.intraSquadTeams.find(t=>t.id===teamId);
-  if(!team) return;
-  if(!team.players.includes(name)) team.players.push(name);
+  const session = state.intraSquadSessions.find(s=>s.id===sessionId);
+  if(!session) return;
+  const key = side==='A' ? 'teamAPlayers' : 'teamBPlayers';
+  session[key] = (session[key]||[]).map(normalizeIntraSquadPlayer);
+  if(!session[key].some(p=>p.name===name)){
+    // 預設守備位置：參考「球員守備位子」頁面已設定的位置
+    const suggestedPositions = playerPositions(name);
+    session[key].push({ name, note:'', position: suggestedPositions[0] || '', battingOrder:'' });
+  }
   saveState();
   renderIntraSquadTeams();
 }
 
-function removePlayerFromIntraSquadTeam(teamId, name){
-  const team = state.intraSquadTeams.find(t=>t.id===teamId);
-  if(!team) return;
-  team.players = team.players.filter(n=>n!==name);
+function removePlayerFromIntraSquadSide(sessionId, side, name){
+  const session = state.intraSquadSessions.find(s=>s.id===sessionId);
+  if(!session) return;
+  const key = side==='A' ? 'teamAPlayers' : 'teamBPlayers';
+  session[key] = (session[key]||[]).map(normalizeIntraSquadPlayer).filter(p=>p.name!==name);
   saveState();
   renderIntraSquadTeams();
+}
+
+function updateIntraSquadPlayerField(sessionId, side, name, field, value){
+  const session = state.intraSquadSessions.find(s=>s.id===sessionId);
+  if(!session) return;
+  const key = side==='A' ? 'teamAPlayers' : 'teamBPlayers';
+  session[key] = (session[key]||[]).map(normalizeIntraSquadPlayer);
+  const p = session[key].find(p=>p.name===name);
+  if(p) p[field] = value;
+  saveState();
+}
+
+function renderIntraSquadSideBox(session, side){
+  const isA = side==='A';
+  const name = isA ? session.teamAName : session.teamBName;
+  const players = (isA ? session.teamAPlayers : session.teamBPlayers).map(normalizeIntraSquadPlayer);
+  const otherPlayers = (isA ? session.teamBPlayers : session.teamAPlayers).map(normalizeIntraSquadPlayer);
+  const playerNames = players.map(p=>p.name);
+  const otherNames = otherPlayers.map(p=>p.name);
+  const available = activePlayerNames().filter(n=>!playerNames.includes(n) && !otherNames.includes(n));
+  const addOptions = `<option value="">＋ 新增球員...</option>` + available.map(n=>`<option value="${n}">${n}</option>`).join('');
+  const positionOptions = ['', ...POSITION_LAYOUT.map(p=>p.name)];
+  const rows = players.map(p=>{
+    const posOpts = positionOptions.map(pos=>`<option value="${pos}" ${pos===p.position?'selected':''}>${pos||'（未設定）'}</option>`).join('');
+    const orderOpts = [''].concat(Array.from({length:12},(_,i)=>String(i+1))).map(n=>`<option value="${n}" ${n===String(p.battingOrder)?'selected':''}>${n||'-'}</option>`).join('');
+    return `<div style="background:#15152F;border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:6px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <span style="font-weight:700;font-size:13.5px;">${p.name}</span>
+        <span onclick="removePlayerFromIntraSquadSide('${session.id}','${side}','${p.name}')" style="cursor:pointer;color:var(--grey);font-size:12px;">移除 ✕</span>
+      </div>
+      <div style="display:flex;gap:6px;margin-bottom:6px;">
+        <div style="flex:1;">
+          <label style="font-size:10px;">棒次</label>
+          <select style="font-size:12.5px;" onchange="updateIntraSquadPlayerField('${session.id}','${side}','${p.name}','battingOrder',this.value)">${orderOpts}</select>
+        </div>
+        <div style="flex:1.4;">
+          <label style="font-size:10px;">先發位子</label>
+          <select style="font-size:12.5px;" onchange="updateIntraSquadPlayerField('${session.id}','${side}','${p.name}','position',this.value)">${posOpts}</select>
+        </div>
+      </div>
+      <input type="text" value="${p.note||''}" placeholder="比賽內容（例如：3打數2安打、守備無失誤）" style="font-size:12.5px;" onchange="updateIntraSquadPlayerField('${session.id}','${side}','${p.name}','note',this.value)">
+    </div>`;
+  }).join('') || `<span class="empty" style="padding:0;">尚未指派</span>`;
+
+  return `<div style="flex:1;min-width:240px;">
+    <input type="text" value="${name}" style="font-weight:700;margin-bottom:8px;" onchange="updateIntraSquadSessionField('${session.id}','${isA?'teamAName':'teamBName'}',this.value)">
+    <div style="font-size:11.5px;color:var(--grey);margin-bottom:6px;">已選 ${players.length} 人</div>
+    <div style="margin-bottom:8px;">${rows}</div>
+    <select style="max-width:100%;" onchange="addPlayerToIntraSquadSide('${session.id}','${side}', this.value); this.value='';">${addOptions}</select>
+  </div>`;
 }
 
 function renderIntraSquadTeams(){
   const box = document.getElementById('intrasquad-list');
   if(!box) return;
-  if(state.intraSquadTeams.length === 0){
-    box.innerHTML = `<div class="card"><div class="empty">尚未建立任何隊伍，請於上方新增</div></div>`;
+  if(state.intraSquadSessions.length === 0){
+    box.innerHTML = `<div class="card"><div class="empty">尚未建立任何分組場次，請於上方新增</div></div>`;
     return;
   }
-  box.innerHTML = state.intraSquadTeams.map(team=>{
-    const assignedElsewhere = intraSquadAssignedPlayers(team.id);
-    const available = activePlayerNames().filter(n=>!assignedElsewhere.has(n) && !team.players.includes(n));
-    const addOptions = `<option value="">＋ 新增球員到「${team.name}」...</option>` + available.map(n=>`<option value="${n}">${n}</option>`).join('');
-    const chips = team.players.map(name=>`
-      <span style="display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:100px;font-size:13px;font-weight:600;
-        border:1px solid var(--field);background:var(--field);color:#fff;margin:3px;">
-        ${name}
-        <span onclick="removePlayerFromIntraSquadTeam('${team.id}','${name}')" style="cursor:pointer;opacity:0.8;">✕</span>
-      </span>`).join('') || `<span class="empty" style="padding:0;">尚未指派任何球員</span>`;
-
-    return `<div class="card">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px;">
-        <input type="text" value="${team.name}" style="font-weight:700;font-size:15px;flex:1;min-width:0;" onchange="updateIntraSquadTeamName('${team.id}',this.value)">
-        <button class="icon-btn" onclick="deleteIntraSquadTeam('${team.id}')">刪除隊伍</button>
+  const sorted = [...state.intraSquadSessions].sort((a,b)=> b.date.localeCompare(a.date));
+  box.innerHTML = sorted.map(session=>`
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <input type="date" value="${session.date}" style="width:150px;font-weight:700;" onchange="updateIntraSquadSessionField('${session.id}','date',this.value)">
+          <input type="text" value="${session.note||''}" placeholder="備註（選填）" style="width:160px;" onchange="updateIntraSquadSessionField('${session.id}','note',this.value)">
+        </div>
+        <button class="icon-btn" onclick="deleteIntraSquadSession('${session.id}')">刪除此場次</button>
       </div>
-      <div style="font-size:12px;color:var(--grey);margin-bottom:8px;">已選 ${team.players.length} 人</div>
-      <div style="margin-bottom:10px;">${chips}</div>
-      <select style="max-width:100%;" onchange="addPlayerToIntraSquadTeam('${team.id}', this.value); this.value='';">${addOptions}</select>
-    </div>`;
-  }).join('');
+      <div style="display:flex;gap:16px;flex-wrap:wrap;">
+        ${renderIntraSquadSideBox(session, 'A')}
+        ${renderIntraSquadSideBox(session, 'B')}
+      </div>
+    </div>`).join('');
 }
 
 function renderPlayers(){
@@ -2590,9 +2652,12 @@ function exportToExcel(){
 
   // 隊內分組賽名單
   const intraSquadRows = [];
-  state.intraSquadTeams.forEach(team=>{
-    (team.players||[]).forEach(name=>{
-      intraSquadRows.push({ 隊伍:team.name, 姓名:name });
+  state.intraSquadSessions.forEach(session=>{
+    (session.teamAPlayers||[]).map(normalizeIntraSquadPlayer).forEach(p=>{
+      intraSquadRows.push({ 日期:session.date, 場次備註:session.note||'', 隊伍:session.teamAName, 棒次:p.battingOrder||'', 姓名:p.name, 先發位子:p.position||'', 比賽內容:p.note||'' });
+    });
+    (session.teamBPlayers||[]).map(normalizeIntraSquadPlayer).forEach(p=>{
+      intraSquadRows.push({ 日期:session.date, 場次備註:session.note||'', 隊伍:session.teamBName, 棒次:p.battingOrder||'', 姓名:p.name, 先發位子:p.position||'', 比賽內容:p.note||'' });
     });
   });
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(intraSquadRows.length?intraSquadRows:[{提示:'尚無資料'}]), '隊內分組賽名單');
