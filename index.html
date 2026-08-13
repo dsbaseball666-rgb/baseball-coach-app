@@ -1415,6 +1415,7 @@ async function loadState(){
         if(data && data.json){
           const parsed = JSON.parse(data.json);
           state = Object.assign(state, parsed);
+          lastKnownGoodPlayerCount = Math.max(lastKnownGoodPlayerCount, (state.players||[]).length);
         }
       }
       return;
@@ -1433,7 +1434,35 @@ async function loadState(){
   }catch(e){ /* 尚無已儲存的資料 */ }
 }
 
+let lastKnownGoodPlayerCount = 0;
+let lastBackupDate = null;
+
+async function backupTodaySnapshot(){
+  const today = todayStr();
+  if(lastBackupDate === today) return; // 今天已經備份過，不重複寫入
+  try{
+    await db.collection('baseballCoach').doc(`backup_${today}`).set({
+      json: JSON.stringify(state),
+      backedUpAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    lastBackupDate = today;
+  }catch(e){
+    console.error('每日備份失敗', e);
+  }
+}
+
 async function saveState(){
+  // 異常存檔警示：若球員人數比上次已知的正常狀態大幅減少，先跟使用者確認，避免舊資料誤蓋掉新資料
+  const currentPlayerCount = (state.players||[]).length;
+  if(lastKnownGoodPlayerCount > 5 && currentPlayerCount < lastKnownGoodPlayerCount * 0.5){
+    const confirmed = confirm(`⚠ 偵測到球員人數大幅減少（從 ${lastKnownGoodPlayerCount} 人變成 ${currentPlayerCount} 人），這可能是資料同步異常造成的。\n\n確定要繼續儲存嗎？\n（按「取消」可以先重新整理頁面確認資料是否正確，避免蓋掉正確的雲端資料）`);
+    if(!confirmed){
+      toast('已取消儲存，建議重新整理頁面確認資料');
+      return;
+    }
+  }
+  lastKnownGoodPlayerCount = Math.max(lastKnownGoodPlayerCount, currentPlayerCount);
+
   if(firebaseReady){
     try{
       if(applyingRemoteUpdate) return;
@@ -1444,6 +1473,7 @@ async function saveState(){
       saveFailedCount = 0;
       if(saveRetryTimer){ clearTimeout(saveRetryTimer); saveRetryTimer = null; }
       hideSaveErrorBanner();
+      backupTodaySnapshot(); // 每日自動備份一份快照，不阻塞主要儲存流程
       return;
     }catch(e){
       console.error('Firebase儲存失敗', e);
@@ -1485,6 +1515,7 @@ function startRealtimeSync(){
       applyingRemoteUpdate = true;
       const parsed = JSON.parse(data.json);
       state = Object.assign(state, parsed);
+      lastKnownGoodPlayerCount = Math.max(lastKnownGoodPlayerCount, (state.players||[]).length);
       renderAll();
     }catch(e){
       console.error('即時同步解析失敗', e);
