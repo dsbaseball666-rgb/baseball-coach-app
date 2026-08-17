@@ -1343,6 +1343,14 @@
     </div>
   </div>
 </div>
+
+<div id="schedule-lineup-modal" style="display:none;position:fixed;inset:0;z-index:200;background:rgba(6,6,16,0.75);align-items:center;justify-content:center;padding:20px;">
+  <div style="background:linear-gradient(180deg, var(--card-2), var(--card));border:2px solid var(--frame);border-radius:4px;padding:22px;max-width:min(94vw,640px);max-height:88vh;overflow:auto;box-shadow:0 8px 0 rgba(0,0,0,0.35);">
+    <h2 id="schedule-lineup-title" style="margin:0 0 14px;font-family:'DotGothic16',sans-serif;font-weight:400;color:var(--gold-2);font-size:15px;letter-spacing:0.05em;">⚾ 先發名單</h2>
+    <div id="schedule-lineup-body"></div>
+    <div style="margin-top:16px;text-align:right;"><button class="btn btn-primary" onclick="closeScheduleLineupModal()">完成</button></div>
+  </div>
+</div>
 <div id="save-error-banner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:100;background:#A6532B;color:#fff;padding:10px 16px;text-align:center;font-size:13.5px;box-shadow:0 2px 8px rgba(0,0,0,0.15);">
   <span class="banner-text">⚠ 資料尚未成功儲存到雲端，正在自動重試中...（請勿關閉此頁面）</span>
   <button onclick="location.reload()" style="margin-left:10px;background:#15152F;color:#A6532B;border:none;border-radius:6px;padding:4px 10px;font-weight:700;cursor:pointer;">重新整理</button>
@@ -2844,6 +2852,15 @@ function exportToExcel(){
   }));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(scheduleRows.length?scheduleRows:[{提示:'尚無資料'}]), '賽事安排');
 
+  // 賽事先發名單
+  const scheduleLineupRows = [];
+  sortedSchedule().forEach(s=>{
+    (s.startingLineup||[]).map(normalizeScheduleLineupPlayer).forEach(p=>{
+      scheduleLineupRows.push({ 日期:s.date, 對手或事項:s.opponent||s.competition||'', 棒次:p.battingOrder||'', 姓名:p.name, 守備位置:p.position||'', 備註:p.note||'' });
+    });
+  });
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(scheduleLineupRows.length?scheduleLineupRows:[{提示:'尚無資料'}]), '賽事先發名單');
+
   // 收費通知
   const feeRows = state.feeNotices.map(f=>({
     日期:f.date, 項目:f.title, 金額:f.amount, 收費對象:f.target||'', 繳費期限:f.due||'', 用途說明:f.purpose||'', 備註:f.note||''
@@ -3141,6 +3158,137 @@ function renderScheduleRosterEditor(item){
   </div>`;
 }
 
+/* ---------- 賽事先發名單（棒次＋守備位置，用法同隊內分組賽的先發陣容） ---------- */
+function normalizeScheduleLineupPlayer(p){
+  if(typeof p === 'string') return { name: p, note: '', position: '', battingOrder: '' };
+  return { note:'', position:'', battingOrder:'', ...p };
+}
+
+function addPlayerToScheduleLineup(scheduleId, name){
+  if(!name) return;
+  const item = state.schedule.find(s=>s.id===scheduleId);
+  if(!item) return;
+  if(!item.startingLineup) item.startingLineup = [];
+  item.startingLineup = item.startingLineup.map(normalizeScheduleLineupPlayer);
+  if(!item.startingLineup.some(p=>p.name===name)){
+    const suggestedPositions = playerPositions(name);
+    item.startingLineup.push({ name, note:'', position: suggestedPositions[0] || '', battingOrder:'' });
+  }
+  saveState();
+  refreshScheduleLineupUI();
+}
+
+function removePlayerFromScheduleLineup(scheduleId, name){
+  const item = state.schedule.find(s=>s.id===scheduleId);
+  if(!item) return;
+  item.startingLineup = (item.startingLineup||[]).map(normalizeScheduleLineupPlayer).filter(p=>p.name!==name);
+  saveState();
+  refreshScheduleLineupUI();
+}
+
+function updateScheduleLineupField(scheduleId, name, field, value){
+  const item = state.schedule.find(s=>s.id===scheduleId);
+  if(!item) return;
+  item.startingLineup = (item.startingLineup||[]).map(normalizeScheduleLineupPlayer);
+  const p = item.startingLineup.find(p=>p.name===name);
+  if(p) p[field] = value;
+  saveState();
+  refreshScheduleLineupUI();
+}
+
+function assignScheduleBattingOrder(scheduleId){
+  const item = state.schedule.find(s=>s.id===scheduleId);
+  if(!item) return;
+  const list = (item.startingLineup||[]).map(normalizeScheduleLineupPlayer);
+  list.forEach((p,i)=>{ p.battingOrder = i+1; });
+  item.startingLineup = list;
+  saveState();
+  refreshScheduleLineupUI();
+  toast('已依目前順序排定棒次');
+}
+
+function moveScheduleLineupPlayer(scheduleId, name, dir){
+  const item = state.schedule.find(s=>s.id===scheduleId);
+  if(!item) return;
+  const list = (item.startingLineup||[]).map(normalizeScheduleLineupPlayer);
+  const idx = list.findIndex(p=>p.name===name);
+  const swapIdx = idx + dir;
+  if(idx<0 || swapIdx<0 || swapIdx>=list.length) return;
+  [list[idx], list[swapIdx]] = [list[swapIdx], list[idx]];
+  if(list.every(p=>p.battingOrder!=='' && p.battingOrder!=null)){
+    list.forEach((p,i)=>{ p.battingOrder = i+1; });
+  }
+  item.startingLineup = list;
+  saveState();
+  refreshScheduleLineupUI();
+}
+
+let scheduleLineupContext = null; // scheduleId
+
+function refreshScheduleLineupUI(){
+  renderSchedule();
+  if(scheduleLineupContext) renderScheduleLineupModal();
+}
+
+function openScheduleLineupModal(scheduleId){
+  scheduleLineupContext = scheduleId;
+  renderScheduleLineupModal();
+  document.getElementById('schedule-lineup-modal').style.display = 'flex';
+}
+
+function closeScheduleLineupModal(){
+  document.getElementById('schedule-lineup-modal').style.display = 'none';
+  scheduleLineupContext = null;
+  renderSchedule();
+}
+
+function renderScheduleLineupModal(){
+  if(!scheduleLineupContext) return;
+  const item = state.schedule.find(s=>s.id===scheduleLineupContext);
+  if(!item){ closeScheduleLineupModal(); return; }
+
+  document.getElementById('schedule-lineup-title').textContent = `⚾ ${item.date} ${item.opponent||item.competition||''} — 先發名單`;
+
+  const lineup = (item.startingLineup||[]).map(normalizeScheduleLineupPlayer);
+  const lineupNames = lineup.map(p=>p.name);
+  // 優先從「比賽選手名單」裡選，若還沒設定選手名單，開放所有現役球員
+  const pool = (item.roster && item.roster.length) ? item.roster : activePlayerNames();
+  const available = pool.filter(n=>!lineupNames.includes(n));
+  const addOptions = `<option value="">＋ 新增球員...</option>` + available.map(n=>`<option value="${n}">${n}</option>`).join('');
+
+  const rows = lineup.map(p=>{
+    const posOpts = ['', ...INTRASQUAD_POSITION_OPTIONS].map(pos=>`<option value="${pos}" ${pos===p.position?'selected':''}>${pos||'（未設定）'}</option>`).join('');
+    const isPitcher = p.position==='投手' && state.pitcherRoster.includes(p.name);
+    return `<tr>
+      <td style="text-align:center;font-weight:700;color:var(--gold-2);width:40px;">
+        ${p.battingOrder || '-'}
+        <div style="display:flex;flex-direction:column;font-size:9px;line-height:1;margin-top:2px;">
+          <span onclick="moveScheduleLineupPlayer('${item.id}','${p.name}',-1)" style="cursor:pointer;">▲</span>
+          <span onclick="moveScheduleLineupPlayer('${item.id}','${p.name}',1)" style="cursor:pointer;">▼</span>
+        </div>
+      </td>
+      <td style="font-weight:700;">${p.name}${isPitcher ? ' <span class="pill pill-warn" style="font-size:9px;padding:1px 6px;">投</span>' : ''}</td>
+      <td><select style="font-size:12px;min-width:100px;" onchange="updateScheduleLineupField('${item.id}','${p.name}','position',this.value)">${posOpts}</select></td>
+      <td><input type="text" value="${p.note||''}" placeholder="備註" style="font-size:12px;min-width:110px;" onchange="updateScheduleLineupField('${item.id}','${p.name}','note',this.value)"></td>
+      <td style="white-space:nowrap;">
+        ${isPitcher ? `<button class="icon-btn" onclick="jumpToPitchRecord('${p.name}','${item.date}')" title="跳到投手球數頁面記錄">🎯</button>` : ''}
+        <span onclick="removePlayerFromScheduleLineup('${item.id}','${p.name}')" style="cursor:pointer;color:var(--grey);font-size:12px;">移除 ✕</span>
+      </td>
+    </tr>`;
+  }).join('');
+
+  const table = lineup.length ? `<table style="font-size:12.5px;margin-bottom:10px;">
+    <thead><tr><th>棒次</th><th>姓名</th><th>守備位置</th><th>備註</th><th></th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>` : `<div class="empty" style="padding:8px 0;">尚未指派任何球員</div>`;
+
+  document.getElementById('schedule-lineup-body').innerHTML = `
+    <div style="overflow-x:auto;">${table}</div>
+    <select style="max-width:100%;margin:10px 0;" onchange="addPlayerToScheduleLineup('${item.id}', this.value); this.value='';">${addOptions}</select>
+    ${lineup.length ? `<button class="btn btn-ghost" style="width:100%;" onclick="assignScheduleBattingOrder('${item.id}')">🔢 依目前順序排定棒次（可先用▲▼調整順序）</button>` : ''}
+  `;
+}
+
 function renderSchedule(){
   const box = document.getElementById('schedule-table');
   const items = sortedSchedule();
@@ -3175,6 +3323,7 @@ function renderSchedule(){
         </div>
         <div class="row-actions">
           <button class="icon-btn" onclick="toggleScheduleRosterView('${s.id}')">${expanded?'收合':'名單'}(${rosterCount})</button>
+          <button class="icon-btn" onclick="openScheduleLineupModal('${s.id}')">⚾ 先發名單(${(s.startingLineup||[]).length})</button>
           <button class="icon-btn" onclick="shareScheduleItem('${s.id}')">分享</button>
           ${isLodging ? `<button class="icon-btn" onclick="createFeeNoticeFromSchedule('${s.id}')">建立收費通知</button>` : ''}
           <button class="icon-btn" onclick="deleteScheduleItem('${s.id}')">刪除</button>
