@@ -1324,6 +1324,25 @@
     <div style="margin-top:16px;text-align:right;"><button class="btn btn-primary" onclick="closeLineupModal()">完成</button></div>
   </div>
 </div>
+
+<div id="calendar-quickadd-modal" style="display:none;position:fixed;inset:0;z-index:200;background:rgba(6,6,16,0.75);align-items:center;justify-content:center;padding:20px;">
+  <div style="background:linear-gradient(180deg, var(--card-2), var(--card));border:2px solid var(--frame);border-radius:4px;padding:22px;max-width:min(92vw,420px);box-shadow:0 8px 0 rgba(0,0,0,0.35);">
+    <h2 style="margin:0 0 14px;font-family:'DotGothic16',sans-serif;font-weight:400;color:var(--gold-2);font-size:15px;letter-spacing:0.05em;">📆 快速新增活動/會議</h2>
+    <div style="margin-bottom:10px;"><label>日期</label><input type="date" id="qa-date"></div>
+    <div style="margin-bottom:10px;"><label>類型</label>
+      <select id="qa-type">
+        <option>會議</option><option>活動</option><option>練習賽</option><option>正式比賽</option><option>循環賽</option><option>其他</option>
+      </select>
+    </div>
+    <div style="margin-bottom:10px;"><label>事項名稱</label><input type="text" id="qa-title" placeholder="例如：家長座談會、器材採購會議"></div>
+    <div style="margin-bottom:10px;"><label>集合/開始時間</label><input type="text" id="qa-time" placeholder="選填，例如 19:00"></div>
+    <div><label>備註</label><input type="text" id="qa-note" placeholder="選填"></div>
+    <div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end;">
+      <button class="btn btn-ghost" onclick="closeCalendarQuickAdd()">取消</button>
+      <button class="btn btn-primary" onclick="saveCalendarQuickAdd()">＋ 新增</button>
+    </div>
+  </div>
+</div>
 <div id="save-error-banner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:100;background:#A6532B;color:#fff;padding:10px 16px;text-align:center;font-size:13.5px;box-shadow:0 2px 8px rgba(0,0,0,0.15);">
   <span class="banner-text">⚠ 資料尚未成功儲存到雲端，正在自動重試中...（請勿關閉此頁面）</span>
   <button onclick="location.reload()" style="margin-left:10px;background:#15152F;color:#A6532B;border:none;border-radius:6px;padding:4px 10px;font-weight:700;cursor:pointer;">重新整理</button>
@@ -2893,8 +2912,8 @@ function exportToExcel(){
 }
 
 /* ---------- Schedule (近期賽事安排) ---------- */
-const SCH_TYPES = ['正式比賽','練習賽','循環賽','活動','其他'];
-const SCH_TYPE_PILL = { '正式比賽':'pill-danger', '循環賽':'pill-warn', '練習賽':'pill-blue', '活動':'pill-grey', '其他':'pill-grey' };
+const SCH_TYPES = ['正式比賽','練習賽','循環賽','活動','會議','其他'];
+const SCH_TYPE_PILL = { '正式比賽':'pill-danger', '循環賽':'pill-warn', '練習賽':'pill-blue', '活動':'pill-grey', '會議':'pill-ok', '其他':'pill-grey' };
 
 function generateTimeOptions15min(selected){
   let html = '<option value="">未指定</option>';
@@ -3201,6 +3220,41 @@ function renderHomeSchedule(){
 }
 
 /* ---------- 首頁：當月行程月曆 ---------- */
+function openCalendarQuickAdd(dateStr){
+  document.getElementById('qa-date').value = dateStr;
+  document.getElementById('qa-type').value = '會議';
+  document.getElementById('qa-title').value = '';
+  document.getElementById('qa-time').value = '';
+  document.getElementById('qa-note').value = '';
+  document.getElementById('calendar-quickadd-modal').style.display = 'flex';
+}
+
+function closeCalendarQuickAdd(){
+  document.getElementById('calendar-quickadd-modal').style.display = 'none';
+}
+
+function saveCalendarQuickAdd(){
+  const date = document.getElementById('qa-date').value;
+  const type = document.getElementById('qa-type').value;
+  const title = document.getElementById('qa-title').value.trim();
+  const time = document.getElementById('qa-time').value.trim();
+  const note = document.getElementById('qa-note').value.trim();
+  if(!date){ toast('請選擇日期'); return; }
+  if(!title){ toast('請輸入事項名稱'); return; }
+
+  state.schedule.push({
+    id: uid(), date, type, opponent: title, competition:'', opponent2:'',
+    time, location:'', depart:'', dress:'', ballType:'', note,
+    lodging:'否', lodgingDays:'', lodgingCost:'', roster:[]
+  });
+  saveState();
+  renderSchedule();
+  renderHomeSchedule();
+  renderHomeCalendar();
+  closeCalendarQuickAdd();
+  toast(`已新增「${title}」到 ${date}`);
+}
+
 function renderHomeCalendar(){
   const titleEl = document.getElementById('home-calendar-title');
   const box = document.getElementById('home-calendar');
@@ -3241,14 +3295,17 @@ function renderHomeCalendar(){
     const events = eventsByDate[dateStr] || [];
     const eventsHtml = events.slice(0,3).map(s=>{
       const pillClass = SCH_TYPE_PILL[s.type] || 'pill-grey';
-      const bg = { 'pill-danger':'var(--danger-bg)', 'pill-warn':'var(--warn-bg)', 'pill-blue':'#1E3350', 'pill-grey':'#2A2A50' }[pillClass] || '#2A2A50';
-      const fg = { 'pill-danger':'var(--danger-text)', 'pill-warn':'var(--warn-text)', 'pill-blue':'#8FC3FF', 'pill-grey':'var(--grey)' }[pillClass] || 'var(--grey)';
+      const bg = { 'pill-danger':'var(--danger-bg)', 'pill-warn':'var(--warn-bg)', 'pill-blue':'#1E3350', 'pill-grey':'#2A2A50', 'pill-ok':'var(--ok-bg)' }[pillClass] || '#2A2A50';
+      const fg = { 'pill-danger':'var(--danger-text)', 'pill-warn':'var(--warn-text)', 'pill-blue':'#8FC3FF', 'pill-grey':'var(--grey)', 'pill-ok':'var(--ok-text)' }[pillClass] || 'var(--grey)';
       const label = s.opponent || s.competition || s.type;
       return `<span class="cal-event" style="background:${bg};color:${fg};" title="${s.type}：${label}" onclick="switchToTab('schedule')">${label}</span>`;
     }).join('');
     const moreHtml = events.length > 3 ? `<span style="font-size:9px;color:var(--grey);">+${events.length-3}筆</span>` : '';
-    html += `<div class="cal-day${isToday?' today':''}">
-      <div class="cal-daynum">${d}</div>
+    html += `<div class="cal-day${isToday?' today':''}" style="position:relative;">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div class="cal-daynum">${d}</div>
+        <span onclick="openCalendarQuickAdd('${dateStr}')" style="cursor:pointer;color:var(--gold);font-weight:700;font-size:12px;line-height:1;" title="快速新增活動/會議">＋</span>
+      </div>
       ${eventsHtml}${moreHtml}
     </div>`;
   }
