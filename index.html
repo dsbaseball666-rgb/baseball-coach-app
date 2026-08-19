@@ -3134,6 +3134,11 @@ function updateScheduleRosterPlayer(scheduleId, playerName, checked){
   if(!item) return;
   if(!item.roster) item.roster = [];
   if(checked){
+    if(playersOnLeaveForDate(item.date).has(playerName)){
+      toast(`${playerName} 在 ${item.date} 請假中，無法加入名單`);
+      renderSchedule();
+      return;
+    }
     if(!item.roster.includes(playerName)) item.roster.push(playerName);
   } else {
     item.roster = item.roster.filter(n=>n!==playerName);
@@ -3145,15 +3150,31 @@ function updateScheduleRosterPlayer(scheduleId, playerName, checked){
 function renderScheduleRosterEditor(item){
   const names = activePlayerNames();
   const roster = item.roster || [];
+  const onLeave = playersOnLeaveForDate(item.date);
   const chips = names.map(name=>{
     const checked = roster.includes(name);
+    const isOnLeave = onLeave.has(name);
+    if(isOnLeave && !checked){
+      // 請假中且尚未加入名單 -> 禁止新增選取
+      return `<label style="display:flex;align-items:center;gap:6px;padding:6px 8px;border:1px solid var(--danger-bg);border-radius:8px;font-size:12.5px;background:var(--danger-bg);opacity:0.7;cursor:not-allowed;">
+        <input type="checkbox" disabled style="width:14px;height:14px;margin:0;">
+        <span style="color:var(--danger-text);">${name}（請假中）</span>
+      </label>`;
+    }
+    if(isOnLeave && checked){
+      // 請假中但先前已加入名單 -> 仍可取消勾選移除,並提示
+      return `<label style="display:flex;align-items:center;gap:6px;padding:6px 8px;border:1px solid var(--sun);border-radius:8px;font-size:12.5px;background:var(--field);color:#fff;cursor:pointer;">
+        <input type="checkbox" checked style="width:14px;height:14px;margin:0;" onchange="updateScheduleRosterPlayer('${item.id}','${name}',this.checked)">
+        <span>${name}（請假中⚠）</span>
+      </label>`;
+    }
     return `<label style="display:flex;align-items:center;gap:6px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;font-size:12.5px;cursor:pointer;${checked?'background:var(--field);color:#fff;border-color:var(--field);':'background:#15152F;'}">
       <input type="checkbox" style="width:14px;height:14px;margin:0;" ${checked?'checked':''} onchange="updateScheduleRosterPlayer('${item.id}','${name}',this.checked)">
       <span>${name}</span>
     </label>`;
   }).join('');
   return `<div style="padding:14px;background:#15152F;border:1px solid var(--line);border-radius:8px;">
-    <div style="font-size:12.5px;color:var(--grey);margin-bottom:8px;font-weight:700;">比賽選手名單（已選 ${roster.length} / 22 人）</div>
+    <div style="font-size:12.5px;color:var(--grey);margin-bottom:8px;font-weight:700;">比賽選手名單（已選 ${roster.length} / 22 人）${onLeave.size ? `<span style="color:var(--danger-text);">・${onLeave.size}人請假中無法選取</span>` : ''}</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:6px;max-height:220px;overflow-y:auto;">${chips}</div>
   </div>`;
 }
@@ -3252,7 +3273,8 @@ function renderScheduleLineupModal(){
   const lineup = (item.startingLineup||[]).map(normalizeScheduleLineupPlayer);
   const lineupNames = lineup.map(p=>p.name);
   // 優先從「比賽選手名單」裡選，若還沒設定選手名單，開放所有現役球員
-  const pool = (item.roster && item.roster.length) ? item.roster : activePlayerNames();
+  const onLeave = playersOnLeaveForDate(item.date);
+  const pool = (item.roster && item.roster.length) ? item.roster : activePlayerNames().filter(n=>!onLeave.has(n));
   const available = pool.filter(n=>!lineupNames.includes(n));
   const addOptions = `<option value="">＋ 新增球員...</option>` + available.map(n=>`<option value="${n}">${n}</option>`).join('');
 
@@ -4006,6 +4028,16 @@ function datesInRange(start, end){
     dates.push(d.toISOString().slice(0,10));
   }
   return dates;
+}
+
+// 查詢某一天有哪些球員請假中(依請假單的起訖日期範圍判斷)
+function playersOnLeaveForDate(dateStr){
+  const names = new Set();
+  if(!dateStr) return names;
+  state.leaveRequests.forEach(l=>{
+    if(dateStr >= l.start && dateStr <= (l.end||l.start)) names.add(l.name);
+  });
+  return names;
 }
 
 function addLeaveRequest(){
