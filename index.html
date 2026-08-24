@@ -1249,7 +1249,48 @@
 
     <!-- ================= FEE NOTICES (收費通知) ================= -->
     <div class="page" id="page-fees">
-      <h1 class="page-title">收費通知</h1>
+      <h1 class="page-title">預算管理</h1>
+      <p class="page-desc">收費通知＋經費收支帳本，掌握球隊財務全貌</p>
+
+      <div class="card">
+        <h2>經費預算管理</h2>
+        <div class="grid grid-3" style="margin-bottom:18px;">
+          <div class="stat-box" style="background:var(--field);">
+            <div class="label">隊費收入</div>
+            <div class="value" id="budget-membership-income">0</div>
+            <div class="sub">元（自動同步下方收費通知的「隊費」實收金額）</div>
+          </div>
+          <div class="stat-box" style="background:var(--gold);color:#3A2B0A;">
+            <div class="label">其餘收入</div>
+            <div class="value" id="budget-other-income" style="color:#3A2B0A;">0</div>
+            <div class="sub" style="color:#5C4A1E;">元</div>
+          </div>
+          <div class="stat-box" style="background:var(--clay);">
+            <div class="label">支出</div>
+            <div class="value" id="budget-expense">0</div>
+            <div class="sub">元</div>
+          </div>
+        </div>
+        <div style="text-align:center;font-size:15px;font-weight:700;color:var(--gold-2);margin-bottom:18px;">結餘：<span id="budget-balance">0</span> 元</div>
+
+        <h2>新增一筆收支</h2>
+        <div class="grid grid-3">
+          <div><label>日期</label><input type="date" id="budget-date"></div>
+          <div><label>類型</label>
+            <select id="budget-type"><option>其餘收入</option><option>支出</option></select>
+          </div>
+          <div><label>金額（元）</label><input type="number" id="budget-amount" min="0" placeholder="例如：6000"></div>
+        </div>
+        <div class="grid grid-3" style="margin-top:14px;">
+          <div style="grid-column:span 2;"><label>項目名稱</label><input type="text" id="budget-item" placeholder="例如：器材採購、贊助款、比賽報名費支出"></div>
+          <div><label>備註</label><input type="text" id="budget-note" placeholder="選填"></div>
+        </div>
+        <div style="margin-top:14px;"><button class="btn btn-primary" onclick="addBudgetEntry()">＋ 新增收支紀錄</button></div>
+      </div>
+
+      <div id="budget-list" class="card-grid"></div>
+
+      <h1 class="page-title" style="margin-top:34px;">收費通知</h1>
       <p class="page-desc">建立收費項目，一鍵分享給家長；也可從「近期賽事」的住宿費用直接建立</p>
 
       <div class="card">
@@ -1392,6 +1433,7 @@ let state = {
   hiddenTabs: [], // 側邊欄被隱藏的分頁 key 清單
   restDays: [], // 不練球的日子 ['2026-08-15', ...]，出席率統計會排除這些日期
   intraSquadSessions: [], // [{id, date, note, teamAName, teamBName, teamAPlayers:[], teamBPlayers:[]}] 每場比賽獨立分兩隊,不受其他場次限制
+  budgetEntries: [], // [{id, date, type:'隊費收入'|'其餘收入'|'支出', item, amount, note}] 經費收支帳本
 };
 
 // 目前在隊球員姓名清單（供各分頁下拉選單使用）
@@ -1609,7 +1651,7 @@ function fillNameSelects(){
 }
 
 function setDatesToday(){
-  ['pitch-date','injury-date','growth-date','att-date','fee-date','leave-start','intrasquad-date-input'].forEach(id=>{
+  ['pitch-date','injury-date','growth-date','att-date','fee-date','leave-start','intrasquad-date-input','budget-date'].forEach(id=>{
     document.getElementById(id).value = todayStr();
   });
   const monthlySel = document.getElementById('monthly-select');
@@ -1629,7 +1671,7 @@ const TABS_CONFIG = [
   { page:'injury',     num:'09', label:'傷兵管理' },
   { page:'fitness',    num:'10', label:'體能檢測' },
   { page:'cleaning',   num:'11', label:'球場打掃分組' },
-  { page:'fees',       num:'12', label:'收費通知' },
+  { page:'fees',       num:'12', label:'預算管理' },
   { page:'practice',   num:'13', label:'練球通知' },
 ];
 
@@ -2712,7 +2754,7 @@ const HOME_NAV_ITEMS = [
   { page:'injury',     icon:'🩹', label:'傷兵管理',       num:'09' },
   { page:'fitness',    icon:'💪', label:'體能檢測',       num:'10' },
   { page:'cleaning',   icon:'🧹', label:'球場打掃分組',   num:'11' },
-  { page:'fees',       icon:'💰', label:'收費通知',       num:'12' },
+  { page:'fees',       icon:'💰', label:'預算管理',       num:'12' },
   { page:'practice',   icon:'📢', label:'練球通知',       num:'13' },
 ];
 
@@ -2866,6 +2908,26 @@ function exportToExcel(){
     日期:f.date, 項目:f.title, 金額:f.amount, 收費對象:f.target||'', 繳費期限:f.due||'', 用途說明:f.purpose||'', 備註:f.note||''
   }));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(feeRows.length?feeRows:[{提示:'尚無資料'}]), '收費通知');
+
+  // 經費預算管理
+  const budgetRows = [];
+  // 隊費收入：直接從收費通知的實收清冊帶入，跟畫面上的統計數字同步
+  state.feeNotices.filter(f=>f.title==='隊費').forEach(f=>{
+    const roster = feeNoticeRoster(f);
+    const payments = f.payments || {};
+    roster.forEach(name=>{
+      const p = payments[name];
+      const amt = Number((p&&p.amount)||0);
+      if(amt > 0){
+        budgetRows.push({ 日期:p.date||f.date, 類型:'隊費收入', 項目名稱:`隊費（${name}）`, 金額:amt, 備註:f.note||'' });
+      }
+    });
+  });
+  // 其餘收入／支出：手動輸入的紀錄
+  state.budgetEntries.forEach(b=>{
+    budgetRows.push({ 日期:b.date, 類型:b.type, 項目名稱:b.item, 金額:b.amount, 備註:b.note||'' });
+  });
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(budgetRows.length?budgetRows:[{提示:'尚無資料'}]), '經費預算管理');
 
   // 請假單
   const leaveRows = state.leaveRequests.map(l=>({
@@ -4435,6 +4497,80 @@ function sharePracticeNotice(id){
   shareContent('練球通知', text, canvas, `練球通知_${p.date}`);
 }
 
+/* ---------- 經費預算管理 ---------- */
+function addBudgetEntry(){
+  const date = document.getElementById('budget-date').value || todayStr();
+  const type = document.getElementById('budget-type').value;
+  const amount = Number(document.getElementById('budget-amount').value || 0);
+  const item = document.getElementById('budget-item').value.trim();
+  const note = document.getElementById('budget-note').value.trim();
+  if(!item){ toast('請輸入項目名稱'); return; }
+  if(!amount || amount <= 0){ toast('請輸入金額'); return; }
+
+  state.budgetEntries.unshift({ id: uid(), date, type, item, amount, note });
+  document.getElementById('budget-item').value = '';
+  document.getElementById('budget-amount').value = '';
+  document.getElementById('budget-note').value = '';
+  saveState();
+  renderBudgetManagement();
+  toast('已新增收支紀錄');
+}
+
+function deleteBudgetEntry(id){
+  state.budgetEntries = state.budgetEntries.filter(b=>b.id!==id);
+  saveState();
+  renderBudgetManagement();
+}
+
+function updateBudgetEntryField(id, field, value){
+  const entry = state.budgetEntries.find(b=>b.id===id);
+  if(!entry) return;
+  entry[field] = (field==='amount') ? Number(value||0) : value;
+  saveState();
+  renderBudgetManagement();
+}
+
+function renderBudgetManagement(){
+  // 隊費收入直接來自「收費通知」裡項目為「隊費」的實際已收金額，跟收費通知同步，不再另外手動輸入
+  const membershipIncome = state.feeNotices
+    .filter(f=>f.title==='隊費')
+    .reduce((sum,f)=> sum + feeSummary(f).totalCollected, 0);
+  const otherIncome = state.budgetEntries.filter(b=>b.type==='其餘收入').reduce((s,b)=>s+Number(b.amount||0),0);
+  const expense = state.budgetEntries.filter(b=>b.type==='支出').reduce((s,b)=>s+Number(b.amount||0),0);
+  const balance = membershipIncome + otherIncome - expense;
+
+  const elMembership = document.getElementById('budget-membership-income');
+  const elOther = document.getElementById('budget-other-income');
+  const elExpense = document.getElementById('budget-expense');
+  const elBalance = document.getElementById('budget-balance');
+  if(elMembership) elMembership.textContent = membershipIncome.toLocaleString();
+  if(elOther) elOther.textContent = otherIncome.toLocaleString();
+  if(elExpense) elExpense.textContent = expense.toLocaleString();
+  if(elBalance) elBalance.textContent = balance.toLocaleString();
+
+  const box = document.getElementById('budget-list');
+  if(!box) return;
+  if(state.budgetEntries.length === 0){
+    box.innerHTML = `<div class="card"><div class="empty">尚無收支紀錄，請於上方新增</div></div>`;
+    return;
+  }
+  const typeColor = { '隊費收入':'var(--field)', '其餘收入':'var(--gold)', '支出':'var(--sun)' };
+  const sorted = [...state.budgetEntries].sort((a,b)=> b.date.localeCompare(a.date));
+  box.innerHTML = sorted.map(b=>`
+    <div class="card" style="padding:14px 16px;border-left:4px solid ${typeColor[b.type]||'var(--line)'};">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px;">
+        <span class="pill ${b.type==='支出'?'pill-danger':(b.type==='其餘收入'?'pill-warn':'pill-ok')}">${b.type}</span>
+        <button class="icon-btn" onclick="deleteBudgetEntry('${b.id}')">刪除</button>
+      </div>
+      <div class="grid grid-2">
+        <div><label>日期</label><input type="date" value="${b.date}" onchange="updateBudgetEntryField('${b.id}','date',this.value)"></div>
+        <div><label>金額（元）</label><input type="number" value="${b.amount}" onchange="updateBudgetEntryField('${b.id}','amount',this.value)"></div>
+      </div>
+      <div style="margin-top:8px;"><label>項目名稱</label><input type="text" value="${b.item}" onchange="updateBudgetEntryField('${b.id}','item',this.value)"></div>
+      <div style="margin-top:8px;"><label>備註</label><input type="text" value="${b.note||''}" onchange="updateBudgetEntryField('${b.id}','note',this.value)"></div>
+    </div>`).join('');
+}
+
 function renderFeeNotices(){
   const box = document.getElementById('fees-list');
   if(state.feeNotices.length===0){
@@ -5152,6 +5288,7 @@ function renderAll(){
   renderAttendanceHistory();
   renderAttendanceRates();
   renderFeeNotices();
+  renderBudgetManagement();
   renderCleaningGroups();
   renderLeaveRequests();
   renderTutoringList();
