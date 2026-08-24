@@ -1277,7 +1277,7 @@
         <div class="grid grid-3">
           <div><label>日期</label><input type="date" id="budget-date"></div>
           <div><label>類型</label>
-            <select id="budget-type"><option>其餘收入</option><option>支出</option></select>
+            <select id="budget-type" onchange="updateBudgetCategoryFieldVisibility()"><option>其餘收入</option><option>支出</option></select>
           </div>
           <div><label>金額（元）</label><input type="number" id="budget-amount" min="0" placeholder="例如：6000"></div>
         </div>
@@ -1285,10 +1285,32 @@
           <div style="grid-column:span 2;"><label>項目名稱</label><input type="text" id="budget-item" placeholder="例如：器材採購、贊助款、比賽報名費支出"></div>
           <div><label>備註</label><input type="text" id="budget-note" placeholder="選填"></div>
         </div>
+        <div id="budget-category-field" style="margin-top:14px;display:none;">
+          <label>對應預算類別（用來計算「已使用」進度）</label>
+          <select id="budget-category"></select>
+        </div>
         <div style="margin-top:14px;"><button class="btn btn-primary" onclick="addBudgetEntry()">＋ 新增收支紀錄</button></div>
       </div>
 
-      <div id="budget-list" class="card-grid"></div>
+      <div id="budget-list" style="display:grid;grid-template-columns:repeat(auto-fill, minmax(220px, 1fr));gap:10px;"></div>
+
+      <div class="card">
+        <h2>預算管控</h2>
+        <p class="page-desc" style="padding-left:0;margin-bottom:14px;">設定各項目的年度/賽季預算額度，圓餅圖即時呈現各項比例分配與已使用進度</p>
+        <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start;">
+          <div style="flex:1;min-width:220px;">
+            <div id="budget-plan-inputs"></div>
+            <div style="margin-top:12px;font-weight:700;color:var(--gold-2);">預算總額：<span id="budget-plan-total">0</span> 元</div>
+            <button class="btn btn-ghost" style="margin-top:12px;width:100%;" onclick="exportBudgetPlanExcel()">⬇ 單獨匯出預算管控 Excel</button>
+          </div>
+          <div style="flex:1;min-width:240px;max-width:340px;">
+            <canvas id="budget-pie-chart"></canvas>
+            <div id="budget-plan-summary" style="text-align:center;margin-top:10px;font-size:13px;"></div>
+            <div style="text-align:center;font-size:10.5px;color:var(--grey);margin-top:4px;">外圈＝預算分配　內圈＝實際已使用</div>
+          </div>
+        </div>
+      </div>
+
 
       <h1 class="page-title" style="margin-top:34px;">收費通知</h1>
       <p class="page-desc">建立收費項目，一鍵分享給家長；也可從「近期賽事」的住宿費用直接建立</p>
@@ -1434,6 +1456,7 @@ let state = {
   restDays: [], // 不練球的日子 ['2026-08-15', ...]，出席率統計會排除這些日期
   intraSquadSessions: [], // [{id, date, note, teamAName, teamBName, teamAPlayers:[], teamBPlayers:[]}] 每場比賽獨立分兩隊,不受其他場次限制
   budgetEntries: [], // [{id, date, type:'隊費收入'|'其餘收入'|'支出', item, amount, note}] 經費收支帳本
+  budgetPlan: { 車資:100000, 餐費:50000, 服裝:50000, 其餘:28000 }, // 年度/賽季預算分配計畫,圓餅圖用
 };
 
 // 目前在隊球員姓名清單（供各分頁下拉選單使用）
@@ -4498,21 +4521,36 @@ function sharePracticeNotice(id){
 }
 
 /* ---------- 經費預算管理 ---------- */
+function updateBudgetCategoryFieldVisibility(){
+  const type = document.getElementById('budget-type').value;
+  const field = document.getElementById('budget-category-field');
+  const sel = document.getElementById('budget-category');
+  if(type === '支出'){
+    field.style.display = 'block';
+    const categories = Object.keys(state.budgetPlan);
+    sel.innerHTML = `<option value="">（未分類）</option>` + categories.map(c=>`<option value="${c}">${c}</option>`).join('');
+  } else {
+    field.style.display = 'none';
+  }
+}
+
 function addBudgetEntry(){
   const date = document.getElementById('budget-date').value || todayStr();
   const type = document.getElementById('budget-type').value;
   const amount = Number(document.getElementById('budget-amount').value || 0);
   const item = document.getElementById('budget-item').value.trim();
   const note = document.getElementById('budget-note').value.trim();
+  const category = type==='支出' ? document.getElementById('budget-category').value : '';
   if(!item){ toast('請輸入項目名稱'); return; }
   if(!amount || amount <= 0){ toast('請輸入金額'); return; }
 
-  state.budgetEntries.unshift({ id: uid(), date, type, item, amount, note });
+  state.budgetEntries.unshift({ id: uid(), date, type, item, amount, note, category });
   document.getElementById('budget-item').value = '';
   document.getElementById('budget-amount').value = '';
   document.getElementById('budget-note').value = '';
   saveState();
   renderBudgetManagement();
+  renderBudgetPlan();
   toast('已新增收支紀錄');
 }
 
@@ -4528,6 +4566,158 @@ function updateBudgetEntryField(id, field, value){
   entry[field] = (field==='amount') ? Number(value||0) : value;
   saveState();
   renderBudgetManagement();
+}
+
+/* ---------- 預算管控（圓餅圖） ---------- */
+let budgetPieChartInstance = null;
+const BUDGET_PIE_COLORS = ['#F0C75E','#3D8B5C','#E23B4E','#8FC3FF','#C0562E','#9D9DC9','#4CA870','#D97645'];
+
+function updateBudgetPlanCategory(oldName, newName){
+  if(!newName || newName===oldName) { renderBudgetPlan(); return; }
+  if(state.budgetPlan[newName] !== undefined){ toast('已有相同名稱的項目'); renderBudgetPlan(); return; }
+  const amount = state.budgetPlan[oldName];
+  delete state.budgetPlan[oldName];
+  state.budgetPlan[newName] = amount;
+  saveState();
+  renderBudgetPlan();
+}
+
+function updateBudgetPlanAmount(name, value){
+  state.budgetPlan[name] = Number(value||0);
+  saveState();
+  renderBudgetPlan();
+}
+
+function deleteBudgetPlanCategory(name){
+  delete state.budgetPlan[name];
+  saveState();
+  renderBudgetPlan();
+}
+
+function addBudgetPlanCategory(){
+  let name = '新項目';
+  let i = 1;
+  while(state.budgetPlan[name] !== undefined){ i++; name = `新項目${i}`; }
+  state.budgetPlan[name] = 0;
+  saveState();
+  renderBudgetPlan();
+}
+
+function renderBudgetPlanInputs(){
+  const box = document.getElementById('budget-plan-inputs');
+  if(!box) return;
+  const entries = Object.entries(state.budgetPlan);
+  const { used } = computeBudgetUsedByCategory();
+  box.innerHTML = entries.map(([name, amount])=>{
+    const u = used[name] || 0;
+    const pct = amount ? Math.min(100, Math.round((u/amount)*100)) : 0;
+    const overBudget = u > amount;
+    return `<div style="margin-bottom:10px;">
+      <div style="display:flex;gap:6px;align-items:center;margin-bottom:3px;">
+        <input type="text" value="${name}" style="flex:1;font-size:13px;" onchange="updateBudgetPlanCategory('${name}', this.value)">
+        <input type="number" value="${amount}" style="flex:1;font-size:13px;" onchange="updateBudgetPlanAmount('${name}', this.value)">
+        <span onclick="deleteBudgetPlanCategory('${name}')" style="cursor:pointer;color:var(--grey);font-size:13px;">✕</span>
+      </div>
+      <div style="font-size:10.5px;color:${overBudget?'var(--sun)':'var(--grey)'};">已用 ${u.toLocaleString()} / ${Number(amount).toLocaleString()} 元（${pct}%）${overBudget?' ⚠超出預算':''}</div>
+    </div>`;
+  }).join('') + `<button class="btn btn-ghost" style="width:100%;margin-top:6px;" onclick="addBudgetPlanCategory()">＋ 新增預算項目</button>`;
+
+  const total = Object.values(state.budgetPlan).reduce((s,v)=>s+Number(v||0),0);
+  const totalEl = document.getElementById('budget-plan-total');
+  if(totalEl) totalEl.textContent = total.toLocaleString();
+}
+
+function computeBudgetUsedByCategory(){
+  const used = {};
+  Object.keys(state.budgetPlan).forEach(c=> used[c] = 0);
+  let uncategorized = 0;
+  state.budgetEntries.filter(b=>b.type==='支出').forEach(b=>{
+    if(b.category && used[b.category] !== undefined){
+      used[b.category] += Number(b.amount||0);
+    } else {
+      uncategorized += Number(b.amount||0);
+    }
+  });
+  return { used, uncategorized };
+}
+
+function renderBudgetPieChart(){
+  const canvas = document.getElementById('budget-pie-chart');
+  if(!canvas || typeof Chart === 'undefined') return;
+  const categories = Object.keys(state.budgetPlan);
+  const budgetData = categories.map(c=>Number(state.budgetPlan[c]||0));
+  const { used, uncategorized } = computeBudgetUsedByCategory();
+  const usedData = categories.map(c=>used[c]);
+  const totalBudget = budgetData.reduce((s,v)=>s+v,0);
+  const totalUsed = usedData.reduce((s,v)=>s+v,0) + uncategorized;
+
+  if(budgetPieChartInstance) budgetPieChartInstance.destroy();
+  budgetPieChartInstance = new Chart(canvas, {
+    type: 'doughnut',
+    data: {
+      labels: categories,
+      datasets: [
+        { label:'預算分配（外圈）', data: budgetData, backgroundColor: BUDGET_PIE_COLORS, borderColor:'#0C0C1E', borderWidth:2 },
+        { label:'已使用（內圈）', data: usedData, backgroundColor: BUDGET_PIE_COLORS.map(c=>c+'80'), borderColor:'#0C0C1E', borderWidth:2 }
+      ]
+    },
+    options: {
+      plugins: {
+        legend: { position:'bottom', labels:{ color:'#EAE8FF', font:{ size:11 } } },
+        tooltip: {
+          callbacks: {
+            label: (ctx)=>{
+              const label = ctx.label;
+              if(ctx.datasetIndex === 0){
+                const pct = totalBudget ? ((ctx.raw/totalBudget)*100).toFixed(1) : 0;
+                return `${label} 預算：${ctx.raw.toLocaleString()}元（佔總預算${pct}%）`;
+              }
+              const budget = Number(state.budgetPlan[label]||0);
+              const pct = budget ? ((ctx.raw/budget)*100).toFixed(1) : 0;
+              return `${label} 已用：${ctx.raw.toLocaleString()}元（已用掉該項預算的${pct}%）`;
+            }
+          }
+        }
+      }
+    }
+  });
+
+  const summaryEl = document.getElementById('budget-plan-summary');
+  if(summaryEl){
+    const remaining = totalBudget - totalUsed;
+    summaryEl.innerHTML = `已使用 <b style="color:var(--sun);">${totalUsed.toLocaleString()}</b> 元　／　剩餘 <b style="color:var(--field-2);">${remaining.toLocaleString()}</b> 元${uncategorized>0 ? `<br><span style="font-size:11px;color:var(--grey);">（其中 ${uncategorized.toLocaleString()} 元支出尚未指定分類，記在「未分類」）</span>` : ''}`;
+  }
+}
+
+function renderBudgetPlan(){
+  renderBudgetPlanInputs();
+  renderBudgetPieChart();
+}
+
+function exportBudgetPlanExcel(){
+  if(typeof XLSX === 'undefined'){
+    toast('⚠ Excel匯出元件尚未載入完成，請稍後再試一次');
+    return;
+  }
+  const total = Object.values(state.budgetPlan).reduce((s,v)=>s+Number(v||0),0);
+  const { used, uncategorized } = computeBudgetUsedByCategory();
+  const totalUsed = Object.values(used).reduce((s,v)=>s+v,0) + uncategorized;
+  const rows = Object.entries(state.budgetPlan).map(([name, amount])=>({
+    項目: name,
+    預算金額: amount,
+    已使用: used[name] || 0,
+    剩餘: Number(amount) - (used[name]||0),
+    佔比: total ? `${((amount/total)*100).toFixed(1)}%` : '0%'
+  }));
+  if(uncategorized > 0){
+    rows.push({ 項目:'（未分類支出）', 預算金額:0, 已使用:uncategorized, 剩餘:-uncategorized, 佔比:'-' });
+  }
+  rows.push({ 項目:'合計', 預算金額: total, 已使用: totalUsed, 剩餘: total-totalUsed, 佔比:'100%' });
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), '預算管控');
+  XLSX.writeFile(wb, `預算管控_${todayStr()}.xlsx`);
+  toast('已匯出預算管控 Excel');
 }
 
 function renderBudgetManagement(){
@@ -4556,19 +4746,24 @@ function renderBudgetManagement(){
   }
   const typeColor = { '隊費收入':'var(--field)', '其餘收入':'var(--gold)', '支出':'var(--sun)' };
   const sorted = [...state.budgetEntries].sort((a,b)=> b.date.localeCompare(a.date));
-  box.innerHTML = sorted.map(b=>`
-    <div class="card" style="padding:14px 16px;border-left:4px solid ${typeColor[b.type]||'var(--line)'};">
-      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px;">
-        <span class="pill ${b.type==='支出'?'pill-danger':(b.type==='其餘收入'?'pill-warn':'pill-ok')}">${b.type}</span>
-        <button class="icon-btn" onclick="deleteBudgetEntry('${b.id}')">刪除</button>
+  box.innerHTML = sorted.map(b=>{
+    const categoryOpts = b.type==='支出' ? `<select style="font-size:11.5px;margin-bottom:6px;" onchange="updateBudgetEntryField('${b.id}','category',this.value); renderBudgetPlan();">
+      <option value="">（未分類）</option>${Object.keys(state.budgetPlan).map(c=>`<option value="${c}" ${c===b.category?'selected':''}>${c}</option>`).join('')}
+    </select>` : '';
+    return `<div style="background:#15152F;border:1px solid var(--line);border-left:3px solid ${typeColor[b.type]||'var(--line)'};border-radius:8px;padding:10px 12px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <span class="pill ${b.type==='支出'?'pill-danger':(b.type==='其餘收入'?'pill-warn':'pill-ok')}" style="font-size:10.5px;">${b.type}</span>
+        <span onclick="deleteBudgetEntry('${b.id}')" style="cursor:pointer;color:var(--grey);font-size:11px;">刪除 ✕</span>
       </div>
-      <div class="grid grid-2">
-        <div><label>日期</label><input type="date" value="${b.date}" onchange="updateBudgetEntryField('${b.id}','date',this.value)"></div>
-        <div><label>金額（元）</label><input type="number" value="${b.amount}" onchange="updateBudgetEntryField('${b.id}','amount',this.value)"></div>
+      <input type="text" value="${b.item}" style="font-weight:700;font-size:13px;margin-bottom:6px;" onchange="updateBudgetEntryField('${b.id}','item',this.value)">
+      ${categoryOpts}
+      <div style="display:flex;gap:6px;margin-bottom:6px;">
+        <input type="date" value="${b.date}" style="font-size:11.5px;flex:1;" onchange="updateBudgetEntryField('${b.id}','date',this.value)">
+        <input type="number" value="${b.amount}" style="font-size:11.5px;flex:1;" onchange="updateBudgetEntryField('${b.id}','amount',this.value); renderBudgetPlan();">
       </div>
-      <div style="margin-top:8px;"><label>項目名稱</label><input type="text" value="${b.item}" onchange="updateBudgetEntryField('${b.id}','item',this.value)"></div>
-      <div style="margin-top:8px;"><label>備註</label><input type="text" value="${b.note||''}" onchange="updateBudgetEntryField('${b.id}','note',this.value)"></div>
-    </div>`).join('');
+      <input type="text" value="${b.note||''}" placeholder="備註" style="font-size:11.5px;" onchange="updateBudgetEntryField('${b.id}','note',this.value)">
+    </div>`;
+  }).join('');
 }
 
 function renderFeeNotices(){
@@ -5289,6 +5484,7 @@ function renderAll(){
   renderAttendanceRates();
   renderFeeNotices();
   renderBudgetManagement();
+  renderBudgetPlan();
   renderCleaningGroups();
   renderLeaveRequests();
   renderTutoringList();
