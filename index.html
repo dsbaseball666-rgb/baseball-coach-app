@@ -3422,7 +3422,21 @@ function renderScheduleLineupModal(){
 
 /* ---------- 歷年賽事成績 ---------- */
 function scheduleResultsWithData(){
-  return state.schedule.filter(s=> s.score || s.result).sort((a,b)=> b.date.localeCompare(a.date));
+  const rows = [];
+  state.schedule.forEach(s=>{
+    if(s.games && s.games.length){
+      // 盃賽/聯賽：每場對戰各自成為一列
+      s.games.forEach(g=>{
+        if(g.opponent || g.score || g.result){
+          rows.push({ date:s.date, competition:s.competition||s.type, type:s.type, opponent:g.opponent, score:g.score, result:g.result, mvp:g.mvp, note:s.note });
+        }
+      });
+    } else if(s.score || s.result){
+      // 單場賽事（練習賽/其他）
+      rows.push({ date:s.date, competition:s.competition||s.type, type:s.type, opponent:s.opponent, score:s.score, result:s.result, mvp:s.mvp, note:s.note });
+    }
+  });
+  return rows.sort((a,b)=> b.date.localeCompare(a.date));
 }
 
 function renderScheduleHistory(){
@@ -3449,7 +3463,7 @@ function renderScheduleHistory(){
 
   const resultPillClass = { '勝':'pill-ok', '敗':'pill-danger', '和局':'pill-grey' };
   box.innerHTML = `<table style="font-size:12.5px;">
-    <thead><tr><th>日期</th><th>賽事名稱</th><th>對手</th><th>比數</th><th>結果</th></tr></thead>
+    <thead><tr><th>日期</th><th>賽事名稱</th><th>對手</th><th>比數</th><th>結果</th><th>MVP</th></tr></thead>
     <tbody>${results.map(s=>`
       <tr>
         <td style="white-space:nowrap;">${s.date}</td>
@@ -3457,8 +3471,64 @@ function renderScheduleHistory(){
         <td>${s.opponent||'-'}</td>
         <td style="font-family:'JetBrains Mono',monospace;">${s.score||'-'}</td>
         <td>${s.result ? `<span class="pill ${resultPillClass[s.result]||'pill-grey'}">${s.result}</span>` : '-'}</td>
+        <td>${s.mvp||'-'}</td>
       </tr>`).join('')}</tbody>
   </table>`;
+}
+
+/* ---------- 盃賽/聯賽：一個賽事可記錄多場對戰(不同對手) ---------- */
+function addScheduleSubGame(scheduleId){
+  const item = state.schedule.find(s=>s.id===scheduleId);
+  if(!item) return;
+  if(!item.games) item.games = [];
+  item.games.push({ id: uid(), opponent:'', score:'', result:'', mvp:'' });
+  saveState();
+  renderSchedule();
+  renderScheduleHistory();
+}
+
+function removeScheduleSubGame(scheduleId, gameId){
+  const item = state.schedule.find(s=>s.id===scheduleId);
+  if(!item) return;
+  item.games = (item.games||[]).filter(g=>g.id!==gameId);
+  saveState();
+  renderSchedule();
+  renderScheduleHistory();
+}
+
+function updateScheduleSubGameField(scheduleId, gameId, field, value){
+  const item = state.schedule.find(s=>s.id===scheduleId);
+  if(!item) return;
+  const game = (item.games||[]).find(g=>g.id===gameId);
+  if(game) game[field] = value;
+  saveState();
+  renderScheduleHistory();
+}
+
+function renderScheduleSubGames(item){
+  const games = item.games || [];
+  const rows = games.map(g=>`
+    <tr>
+      <td><input type="text" value="${g.opponent||''}" placeholder="對手名稱" style="font-size:12.5px;min-width:110px;" onchange="updateScheduleSubGameField('${item.id}','${g.id}','opponent',this.value)"></td>
+      <td><input type="text" value="${g.score||''}" placeholder="例如8:5" style="font-size:12.5px;width:80px;" onchange="updateScheduleSubGameField('${item.id}','${g.id}','score',this.value)"></td>
+      <td><select style="font-size:12.5px;" onchange="updateScheduleSubGameField('${item.id}','${g.id}','result',this.value)">
+        <option value="" ${!g.result?'selected':''}>未填寫</option>
+        <option value="勝" ${g.result==='勝'?'selected':''}>勝</option>
+        <option value="敗" ${g.result==='敗'?'selected':''}>敗</option>
+        <option value="和局" ${g.result==='和局'?'selected':''}>和局</option>
+      </select></td>
+      <td><input type="text" value="${g.mvp||''}" placeholder="MVP" style="font-size:12.5px;min-width:90px;" onchange="updateScheduleSubGameField('${item.id}','${g.id}','mvp',this.value)"></td>
+      <td><span onclick="removeScheduleSubGame('${item.id}','${g.id}')" style="cursor:pointer;color:var(--grey);font-size:12px;">✕</span></td>
+    </tr>`).join('');
+
+  return `<div style="background:#15152F;border:1px solid var(--line);border-radius:8px;padding:12px;">
+    <div style="font-size:12.5px;color:var(--grey);font-weight:700;margin-bottom:8px;">各場對戰記錄（盃賽/聯賽可能一次對戰多支隊伍，每場分別記錄對手、勝負、MVP）</div>
+    ${games.length ? `<div style="overflow-x:auto;"><table style="font-size:12.5px;">
+      <thead><tr><th>對手</th><th>比數</th><th>勝負</th><th>MVP</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>` : `<div class="empty" style="padding:6px 0;">尚未新增任何對戰紀錄</div>`}
+    <button class="btn btn-ghost" style="width:100%;margin-top:10px;" onclick="addScheduleSubGame('${item.id}')">＋ 新增一場對戰</button>
+  </div>`;
 }
 
 function exportScheduleHistoryExcel(){
@@ -3468,12 +3538,12 @@ function exportScheduleHistoryExcel(){
   }
   const results = scheduleResultsWithData();
   const rows = results.map(s=>({
-    日期:s.date, 類型:s.type, 賽事名稱:s.competition||'', 對手:s.opponent||'', 比數:s.score||'', 勝負結果:s.result||'', 備註:s.note||''
+    日期:s.date, 類型:s.type, 賽事名稱:s.competition||'', 對手:s.opponent||'', 比數:s.score||'', 勝負結果:s.result||'', MVP:s.mvp||'', 備註:s.note||''
   }));
   const wins = results.filter(s=>s.result==='勝').length;
   const losses = results.filter(s=>s.result==='敗').length;
   const draws = results.filter(s=>s.result==='和局').length;
-  rows.push({ 日期:'', 類型:'', 賽事名稱:'戰績總計', 對手:'', 比數:'', 勝負結果:`${wins}勝${losses}敗${draws}和`, 備註:'' });
+  rows.push({ 日期:'', 類型:'', 賽事名稱:'戰績總計', 對手:'', 比數:'', 勝負結果:`${wins}勝${losses}敗${draws}和`, MVP:'', 備註:'' });
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.length?rows:[{提示:'尚無資料'}]), '歷年賽事成績');
@@ -3499,6 +3569,7 @@ function renderSchedule(){
     const lodgingOpts = ['否','是'].map(v=>`<option value="${v}" ${v===(s.lodging||'否')?'selected':''}>${v}</option>`).join('');
     const isLodging = s.type==='活動' && s.lodging==='是';
     const isGameType = ['正式比賽','練習賽','循環賽','其他'].includes(s.type);
+    const isCupType = ['正式比賽','循環賽'].includes(s.type); // 盃賽/聯賽類型,可能一次對戰多支隊伍
     const dressList = SCH_DRESS_OPTIONS.includes(s.dress) || !s.dress ? SCH_DRESS_OPTIONS : [s.dress, ...SCH_DRESS_OPTIONS];
     const dressOpts = dressList.map(d=>`<option value="${d}" ${d===s.dress?'selected':''}>${d}</option>`).join('');
     const ballList = SCH_BALLTYPE_OPTIONS.includes(s.ballType) || !s.ballType ? SCH_BALLTYPE_OPTIONS : [s.ballType, ...SCH_BALLTYPE_OPTIONS];
@@ -3535,11 +3606,13 @@ function renderSchedule(){
         <div><label>住宿</label><select onchange="updateScheduleField('${s.id}','lodging',this.value); renderSchedule();" ${s.type!=='活動'?'disabled':''}>${lodgingOpts}</select></div>
         ${isLodging ? `<div><label>住宿天數</label><input type="number" value="${s.lodgingDays||''}" onchange="updateScheduleField('${s.id}','lodgingDays',this.value)"></div>` : ''}
         ${isLodging ? `<div><label>住宿費用</label><input type="number" value="${s.lodgingCost||''}" onchange="updateScheduleField('${s.id}','lodgingCost',this.value)"></div>` : ''}
-        ${isGameType ? `<div><label>比數（我方:對方）</label><input type="text" value="${s.score||''}" placeholder="例如 8:5" onchange="updateScheduleField('${s.id}','score',this.value)"></div>` : ''}
-        ${isGameType ? `<div><label>勝負結果</label><select onchange="updateScheduleField('${s.id}','result',this.value); renderSchedule(); renderScheduleHistory();"><option value="" ${!s.result?'selected':''}>未填寫</option><option value="勝" ${s.result==='勝'?'selected':''}>勝</option><option value="敗" ${s.result==='敗'?'selected':''}>敗</option><option value="和局" ${s.result==='和局'?'selected':''}>和局</option></select></div>` : ''}
+        ${(isGameType && !isCupType) ? `<div><label>比數（我方:對方）</label><input type="text" value="${s.score||''}" placeholder="例如 8:5" onchange="updateScheduleField('${s.id}','score',this.value)"></div>` : ''}
+        ${(isGameType && !isCupType) ? `<div><label>勝負結果</label><select onchange="updateScheduleField('${s.id}','result',this.value); renderSchedule(); renderScheduleHistory();"><option value="" ${!s.result?'selected':''}>未填寫</option><option value="勝" ${s.result==='勝'?'selected':''}>勝</option><option value="敗" ${s.result==='敗'?'selected':''}>敗</option><option value="和局" ${s.result==='和局'?'selected':''}>和局</option></select></div>` : ''}
+        ${(isGameType && !isCupType) ? `<div><label>本場MVP</label><input type="text" value="${s.mvp||''}" onchange="updateScheduleField('${s.id}','mvp',this.value)"></div>` : ''}
       </div>
       <div style="margin-top:10px;"><label>備註</label><input type="text" value="${s.note||''}" onchange="updateScheduleField('${s.id}','note',this.value)"></div>
 
+      ${isCupType ? `<div style="margin-top:14px;">${renderScheduleSubGames(s)}</div>` : ''}
       ${expanded ? `<div style="margin-top:12px;">${renderScheduleRosterEditor(s)}</div>` : ''}
     </div>`;
   }).join('');
