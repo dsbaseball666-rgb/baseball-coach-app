@@ -605,8 +605,8 @@
 
     <!-- ================= SCHEDULE ================= -->
     <div class="page" id="page-schedule">
-      <h1 class="page-title">近期賽事安排</h1>
-      <p class="page-desc">可隨時新增、修改、刪除比賽/活動等行程，並一鍵分享給家長</p>
+      <h1 class="page-title">賽事管理</h1>
+      <p class="page-desc">可隨時新增、修改、刪除比賽/活動等行程，並一鍵分享給家長；下方也能查看歷年賽事成績</p>
 
       <div class="card">
         <h2>新增行程</h2>
@@ -672,6 +672,14 @@
 
       <h2 style="margin-bottom:10px;">賽事/行程列表</h2>
       <div id="schedule-table" style="display:grid;grid-template-columns:repeat(auto-fill, minmax(420px, 1fr));gap:14px;"></div>
+
+      <div class="card" style="margin-top:24px;">
+        <h2>歷年賽事成績</h2>
+        <p class="page-desc" style="padding-left:0;margin-bottom:14px;">自動彙整所有已填寫比數/勝負的賽事，依日期排序；只要在上方卡片填寫「比數」與「勝負結果」即會自動出現在這裡</p>
+        <div id="schedule-record-summary" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;"></div>
+        <div id="schedule-history-table" style="overflow-x:auto;"></div>
+        <div style="margin-top:14px;"><button class="btn btn-ghost" onclick="exportScheduleHistoryExcel()">⬇ 單獨匯出歷年賽事成績 Excel</button></div>
+      </div>
     </div>
 
     <!-- ================= ATTENDANCE ================= -->
@@ -785,6 +793,7 @@
         <h2>新增球員</h2>
         <div class="grid grid-2">
           <div><label>姓名</label><input type="text" id="new-player-name" placeholder="輸入姓名"></div>
+          <div><label>背號</label><input type="text" id="new-player-number" placeholder="選填，例如：7"></div>
         </div>
         <div style="margin-top:14px;"><button class="btn btn-primary" onclick="addPlayer()">＋ 新增球員</button></div>
       </div>
@@ -1688,7 +1697,7 @@ const TABS_CONFIG = [
   { page:'positions',  num:'03', label:'球員守備位子' },
   { page:'intrasquad', num:'04', label:'隊內分組賽名單' },
   { page:'attendance', num:'05', label:'點名/請假單' },
-  { page:'schedule',   num:'06', label:'近期賽事' },
+  { page:'schedule',   num:'06', label:'賽事管理' },
   { page:'growth',     num:'07', label:'成長管理' },
   { page:'pitch',      num:'08', label:'投手球數' },
   { page:'injury',     num:'09', label:'傷兵管理' },
@@ -1773,9 +1782,11 @@ function starHtml(playerId, skill){
 
 function addPlayer(){
   const name = document.getElementById('new-player-name').value.trim();
+  const number = document.getElementById('new-player-number').value.trim();
   if(!name){ toast('請輸入球員姓名'); return; }
-  state.players.push({ id: uid(), name, class: '', status:'在隊', group:'' });
+  state.players.push({ id: uid(), name, class: '', status:'在隊', group:'', number });
   document.getElementById('new-player-name').value = '';
+  document.getElementById('new-player-number').value = '';
   saveState();
   fillNameSelects();
   renderPlayers();
@@ -1938,6 +1949,16 @@ function playerPositions(name){
   return Object.keys(state.fieldingPositions).filter(pos =>
     (state.fieldingPositions[pos] || []).includes(name)
   );
+}
+
+function playerNumber(name){
+  const p = state.players.find(pl=>pl.name===name);
+  return (p && p.number) ? p.number : '';
+}
+
+function playerNameWithNumber(name){
+  const num = playerNumber(name);
+  return num ? `#${num} ${name}` : name;
 }
 
 function renderPositionsDiamond(){
@@ -2153,7 +2174,7 @@ function renderIntraSquadSideBox(session, side){
   const chips = players.map(p=>`
     <span style="display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:100px;font-size:13px;font-weight:600;
       border:1px solid var(--field);background:var(--field);color:#fff;margin:3px;">
-      ${p.name}
+      ${playerNameWithNumber(p.name)}
       <span onclick="removePlayerFromIntraSquadSide('${session.id}','${side}','${p.name}')" style="cursor:pointer;opacity:0.8;">✕</span>
     </span>`).join('') || `<span class="empty" style="padding:0;">尚未指派</span>`;
 
@@ -2202,6 +2223,7 @@ function renderLineupModal(){
           <span onclick="moveIntraSquadPlayer('${session.id}','${side}','${p.name}',1)" style="cursor:pointer;">▼</span>
         </div>
       </td>
+      <td style="font-weight:700;color:var(--gold-2);text-align:center;">${playerNumber(p.name) ? '#'+playerNumber(p.name) : '-'}</td>
       <td style="font-weight:700;">${p.name}${isPitcher ? ' <span class="pill pill-warn" style="font-size:9px;padding:1px 6px;">投</span>' : ''}</td>
       <td><select style="font-size:12px;min-width:100px;" onchange="updateIntraSquadPlayerField('${session.id}','${side}','${p.name}','position',this.value)">${posOpts}</select></td>
       <td><input type="text" value="${p.note||''}" placeholder="比賽內容" style="font-size:12px;min-width:120px;" onchange="updateIntraSquadPlayerField('${session.id}','${side}','${p.name}','note',this.value)"></td>
@@ -2214,7 +2236,7 @@ function renderLineupModal(){
   document.getElementById('lineup-modal-body').innerHTML = `
     <div style="overflow-x:auto;">
       <table style="font-size:12.5px;margin-bottom:12px;">
-        <thead><tr><th>棒次</th><th>姓名</th><th>守備位置</th><th>比賽內容</th><th></th></tr></thead>
+        <thead><tr><th>棒次</th><th>背號</th><th>姓名</th><th>守備位置</th><th>比賽內容</th><th></th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
     </div>
@@ -2266,6 +2288,7 @@ function renderPlayers(){
         <input type="text" value="${p.name}" style="font-weight:700;flex:1;min-width:0;" onchange="updatePlayerField('${p.id}','name',this.value)">
         <button class="icon-btn" onclick="deletePlayer('${p.id}')">刪除</button>
       </div>
+      <div style="margin-bottom:8px;"><label>背號</label><input type="text" value="${p.number||''}" placeholder="例如：7" style="max-width:100%;" onchange="updatePlayerField('${p.id}','number',this.value)"></div>
       <div style="margin-bottom:8px;"><label>組別</label><select onchange="updatePlayerField('${p.id}','group',this.value)">${groupOptions}</select></div>
       <div style="margin-bottom:8px;"><label>狀態</label><select onchange="updatePlayerField('${p.id}','status',this.value)">${statusOptions}</select></div>
       <div><label>職務</label><div>${badgesHtml}</div></div>
@@ -2771,7 +2794,7 @@ const HOME_NAV_ITEMS = [
   { page:'positions',  icon:'⚾', label:'球員守備位子',   num:'03' },
   { page:'intrasquad', icon:'🆚', label:'隊內分組賽名單', num:'04' },
   { page:'attendance', icon:'✅', label:'點名/請假單',    num:'05' },
-  { page:'schedule',   icon:'📅', label:'近期賽事',       num:'06' },
+  { page:'schedule',   icon:'📅', label:'賽事管理',       num:'06' },
   { page:'growth',     icon:'📈', label:'成長管理',       num:'07' },
   { page:'pitch',      icon:'🎯', label:'投手球數',       num:'08' },
   { page:'injury',     icon:'🩹', label:'傷兵管理',       num:'09' },
@@ -2847,7 +2870,7 @@ function exportToExcel(){
   const skills = ['守備','打擊','跑壘','投球','態度','體能'];
   const ratingRows = state.players.map(p=>{
     const r = state.ratings[p.id] || {};
-    const row = {姓名:p.name, 組別:p.group||'未分組', 職務:playerBadges(p.name).join('、')||'', 守備位置:playerPositions(p.name).join('、')||'', 狀態:p.status};
+    const row = {姓名:p.name, 背號:p.number||'', 組別:p.group||'未分組', 職務:playerBadges(p.name).join('、')||'', 守備位置:playerPositions(p.name).join('、')||'', 狀態:p.status};
     skills.forEach(sk=>row[sk]=r[sk]||3);
     row['綜合平均'] = (skills.reduce((s,k)=>s+(r[k]||3),0)/skills.length).toFixed(2);
     return row;
@@ -2900,10 +2923,10 @@ function exportToExcel(){
   const intraSquadRows = [];
   state.intraSquadSessions.forEach(session=>{
     (session.teamAPlayers||[]).map(normalizeIntraSquadPlayer).forEach(p=>{
-      intraSquadRows.push({ 日期:session.date, 場次備註:session.note||'', 隊伍:session.teamAName, 棒次:p.battingOrder||'', 姓名:p.name, 先發位子:p.position||'', 比賽內容:p.note||'' });
+      intraSquadRows.push({ 日期:session.date, 場次備註:session.note||'', 隊伍:session.teamAName, 棒次:p.battingOrder||'', 背號:playerNumber(p.name)||'', 姓名:p.name, 先發位子:p.position||'', 比賽內容:p.note||'' });
     });
     (session.teamBPlayers||[]).map(normalizeIntraSquadPlayer).forEach(p=>{
-      intraSquadRows.push({ 日期:session.date, 場次備註:session.note||'', 隊伍:session.teamBName, 棒次:p.battingOrder||'', 姓名:p.name, 先發位子:p.position||'', 比賽內容:p.note||'' });
+      intraSquadRows.push({ 日期:session.date, 場次備註:session.note||'', 隊伍:session.teamBName, 棒次:p.battingOrder||'', 背號:playerNumber(p.name)||'', 姓名:p.name, 先發位子:p.position||'', 比賽內容:p.note||'' });
     });
   });
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(intraSquadRows.length?intraSquadRows:[{提示:'尚無資料'}]), '隊內分組賽名單');
@@ -2913,7 +2936,7 @@ function exportToExcel(){
     日期:s.date, 類型:s.type, 對手或事項:s.opponent||'', 賽事名稱:s.competition||'', 對手2:s.opponent2||'',
     集合時間:s.time||'', 集合地點:s.location||'', 出發時間:s.depart||'', 穿著服裝:s.dress||'', 用球類別:s.ballType||'',
     是否住宿:s.lodging||'', 住宿天數:s.lodgingDays||'', 住宿費用:s.lodgingCost||'',
-    選手名單:(s.roster||[]).join('、'), 備註:s.note||''
+    選手名單:(s.roster||[]).join('、'), 比數:s.score||'', 勝負結果:s.result||'', 備註:s.note||''
   }));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(scheduleRows.length?scheduleRows:[{提示:'尚無資料'}]), '賽事安排');
 
@@ -2921,7 +2944,7 @@ function exportToExcel(){
   const scheduleLineupRows = [];
   sortedSchedule().forEach(s=>{
     (s.startingLineup||[]).map(normalizeScheduleLineupPlayer).forEach(p=>{
-      scheduleLineupRows.push({ 日期:s.date, 對手或事項:s.opponent||s.competition||'', 棒次:p.battingOrder||'', 姓名:p.name, 守備位置:p.position||'', 備註:p.note||'' });
+      scheduleLineupRows.push({ 日期:s.date, 對手或事項:s.opponent||s.competition||'', 棒次:p.battingOrder||'', 背號:playerNumber(p.name)||'', 姓名:p.name, 守備位置:p.position||'', 備註:p.note||'' });
     });
   });
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(scheduleLineupRows.length?scheduleLineupRows:[{提示:'尚無資料'}]), '賽事先發名單');
@@ -3255,7 +3278,7 @@ function renderScheduleRosterEditor(item){
     }
     return `<label style="display:flex;align-items:center;gap:6px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;font-size:12.5px;cursor:pointer;${checked?'background:var(--field);color:#fff;border-color:var(--field);':'background:#15152F;'}">
       <input type="checkbox" style="width:14px;height:14px;margin:0;" ${checked?'checked':''} onchange="updateScheduleRosterPlayer('${item.id}','${name}',this.checked)">
-      <span>${name}</span>
+      <span>${playerNameWithNumber(name)}</span>
     </label>`;
   }).join('');
   return `<div style="padding:14px;background:#15152F;border:1px solid var(--line);border-radius:8px;">
@@ -3374,6 +3397,7 @@ function renderScheduleLineupModal(){
           <span onclick="moveScheduleLineupPlayer('${item.id}','${p.name}',1)" style="cursor:pointer;">▼</span>
         </div>
       </td>
+      <td style="font-weight:700;color:var(--gold-2);text-align:center;">${playerNumber(p.name) ? '#'+playerNumber(p.name) : '-'}</td>
       <td style="font-weight:700;">${p.name}${isPitcher ? ' <span class="pill pill-warn" style="font-size:9px;padding:1px 6px;">投</span>' : ''}</td>
       <td><select style="font-size:12px;min-width:100px;" onchange="updateScheduleLineupField('${item.id}','${p.name}','position',this.value)">${posOpts}</select></td>
       <td><input type="text" value="${p.note||''}" placeholder="備註" style="font-size:12px;min-width:110px;" onchange="updateScheduleLineupField('${item.id}','${p.name}','note',this.value)"></td>
@@ -3385,7 +3409,7 @@ function renderScheduleLineupModal(){
   }).join('');
 
   const table = lineup.length ? `<table style="font-size:12.5px;margin-bottom:10px;">
-    <thead><tr><th>棒次</th><th>姓名</th><th>守備位置</th><th>備註</th><th></th></tr></thead>
+    <thead><tr><th>棒次</th><th>背號</th><th>姓名</th><th>守備位置</th><th>備註</th><th></th></tr></thead>
     <tbody>${rows}</tbody>
   </table>` : `<div class="empty" style="padding:8px 0;">尚未指派任何球員</div>`;
 
@@ -3394,6 +3418,67 @@ function renderScheduleLineupModal(){
     <select style="max-width:100%;margin:10px 0;" onchange="addPlayerToScheduleLineup('${item.id}', this.value); this.value='';">${addOptions}</select>
     ${lineup.length ? `<button class="btn btn-ghost" style="width:100%;" onclick="assignScheduleBattingOrder('${item.id}')">🔢 依目前順序排定棒次（可先用▲▼調整順序）</button>` : ''}
   `;
+}
+
+/* ---------- 歷年賽事成績 ---------- */
+function scheduleResultsWithData(){
+  return state.schedule.filter(s=> s.score || s.result).sort((a,b)=> b.date.localeCompare(a.date));
+}
+
+function renderScheduleHistory(){
+  const box = document.getElementById('schedule-history-table');
+  const summaryBox = document.getElementById('schedule-record-summary');
+  if(!box || !summaryBox) return;
+
+  const results = scheduleResultsWithData();
+  const wins = results.filter(s=>s.result==='勝').length;
+  const losses = results.filter(s=>s.result==='敗').length;
+  const draws = results.filter(s=>s.result==='和局').length;
+
+  summaryBox.innerHTML = `
+    <span class="pill pill-ok">${wins} 勝</span>
+    <span class="pill pill-danger">${losses} 敗</span>
+    <span class="pill pill-grey">${draws} 和</span>
+    <span class="pill pill-warn">共 ${results.length} 場已記錄</span>
+  `;
+
+  if(results.length===0){
+    box.innerHTML = `<div class="empty">尚無已填寫比數/勝負的賽事紀錄</div>`;
+    return;
+  }
+
+  const resultPillClass = { '勝':'pill-ok', '敗':'pill-danger', '和局':'pill-grey' };
+  box.innerHTML = `<table style="font-size:12.5px;">
+    <thead><tr><th>日期</th><th>賽事名稱</th><th>對手</th><th>比數</th><th>結果</th></tr></thead>
+    <tbody>${results.map(s=>`
+      <tr>
+        <td style="white-space:nowrap;">${s.date}</td>
+        <td>${s.competition||s.type}</td>
+        <td>${s.opponent||'-'}</td>
+        <td style="font-family:'JetBrains Mono',monospace;">${s.score||'-'}</td>
+        <td>${s.result ? `<span class="pill ${resultPillClass[s.result]||'pill-grey'}">${s.result}</span>` : '-'}</td>
+      </tr>`).join('')}</tbody>
+  </table>`;
+}
+
+function exportScheduleHistoryExcel(){
+  if(typeof XLSX === 'undefined'){
+    toast('⚠ Excel匯出元件尚未載入完成，請稍後再試一次');
+    return;
+  }
+  const results = scheduleResultsWithData();
+  const rows = results.map(s=>({
+    日期:s.date, 類型:s.type, 賽事名稱:s.competition||'', 對手:s.opponent||'', 比數:s.score||'', 勝負結果:s.result||'', 備註:s.note||''
+  }));
+  const wins = results.filter(s=>s.result==='勝').length;
+  const losses = results.filter(s=>s.result==='敗').length;
+  const draws = results.filter(s=>s.result==='和局').length;
+  rows.push({ 日期:'', 類型:'', 賽事名稱:'戰績總計', 對手:'', 比數:'', 勝負結果:`${wins}勝${losses}敗${draws}和`, 備註:'' });
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.length?rows:[{提示:'尚無資料'}]), '歷年賽事成績');
+  XLSX.writeFile(wb, `歷年賽事成績_${todayStr()}.xlsx`);
+  toast('已匯出歷年賽事成績 Excel');
 }
 
 function renderSchedule(){
@@ -3413,6 +3498,7 @@ function renderSchedule(){
     const departOpts = generateTimeOptions15min(s.depart||'');
     const lodgingOpts = ['否','是'].map(v=>`<option value="${v}" ${v===(s.lodging||'否')?'selected':''}>${v}</option>`).join('');
     const isLodging = s.type==='活動' && s.lodging==='是';
+    const isGameType = ['正式比賽','練習賽','循環賽','其他'].includes(s.type);
     const dressList = SCH_DRESS_OPTIONS.includes(s.dress) || !s.dress ? SCH_DRESS_OPTIONS : [s.dress, ...SCH_DRESS_OPTIONS];
     const dressOpts = dressList.map(d=>`<option value="${d}" ${d===s.dress?'selected':''}>${d}</option>`).join('');
     const ballList = SCH_BALLTYPE_OPTIONS.includes(s.ballType) || !s.ballType ? SCH_BALLTYPE_OPTIONS : [s.ballType, ...SCH_BALLTYPE_OPTIONS];
@@ -3449,6 +3535,8 @@ function renderSchedule(){
         <div><label>住宿</label><select onchange="updateScheduleField('${s.id}','lodging',this.value); renderSchedule();" ${s.type!=='活動'?'disabled':''}>${lodgingOpts}</select></div>
         ${isLodging ? `<div><label>住宿天數</label><input type="number" value="${s.lodgingDays||''}" onchange="updateScheduleField('${s.id}','lodgingDays',this.value)"></div>` : ''}
         ${isLodging ? `<div><label>住宿費用</label><input type="number" value="${s.lodgingCost||''}" onchange="updateScheduleField('${s.id}','lodgingCost',this.value)"></div>` : ''}
+        ${isGameType ? `<div><label>比數（我方:對方）</label><input type="text" value="${s.score||''}" placeholder="例如 8:5" onchange="updateScheduleField('${s.id}','score',this.value)"></div>` : ''}
+        ${isGameType ? `<div><label>勝負結果</label><select onchange="updateScheduleField('${s.id}','result',this.value); renderSchedule(); renderScheduleHistory();"><option value="" ${!s.result?'selected':''}>未填寫</option><option value="勝" ${s.result==='勝'?'selected':''}>勝</option><option value="敗" ${s.result==='敗'?'selected':''}>敗</option><option value="和局" ${s.result==='和局'?'selected':''}>和局</option></select></div>` : ''}
       </div>
       <div style="margin-top:10px;"><label>備註</label><input type="text" value="${s.note||''}" onchange="updateScheduleField('${s.id}','note',this.value)"></div>
 
@@ -5476,6 +5564,7 @@ function renderAll(){
   renderInjury();
   renderGrowth();
   renderSchedule();
+  renderScheduleHistory();
   renderHomeSchedule();
   renderHomeCalendar();
   renderAttendanceForm();
