@@ -3428,7 +3428,7 @@ function scheduleResultsWithData(){
       // 盃賽/聯賽：每場對戰各自成為一列
       s.games.forEach(g=>{
         if(g.opponent || g.score || g.result){
-          rows.push({ date:s.date, competition:s.competition||s.type, type:s.type, opponent:g.opponent, score:g.score, result:g.result, mvp:g.mvp, note:s.note });
+          rows.push({ date:g.date||s.date, competition:s.competition||s.type, type:s.type, opponent:g.opponent, score:g.score, result:g.result, mvp:g.mvp, note:s.note });
         }
       });
     } else if(s.score || s.result){
@@ -3481,7 +3481,7 @@ function addScheduleSubGame(scheduleId){
   const item = state.schedule.find(s=>s.id===scheduleId);
   if(!item) return;
   if(!item.games) item.games = [];
-  item.games.push({ id: uid(), opponent:'', score:'', result:'', mvp:'' });
+  item.games.push({ id: uid(), date: item.date, opponent:'', score:'', result:'', mvp:'' });
   saveState();
   renderSchedule();
   renderScheduleHistory();
@@ -3509,6 +3509,7 @@ function renderScheduleSubGames(item){
   const games = item.games || [];
   const rows = games.map(g=>`
     <tr>
+      <td><input type="date" value="${g.date||item.date}" style="font-size:12.5px;min-width:130px;" onchange="updateScheduleSubGameField('${item.id}','${g.id}','date',this.value)"></td>
       <td><input type="text" value="${g.opponent||''}" placeholder="對手名稱" style="font-size:12.5px;min-width:110px;" onchange="updateScheduleSubGameField('${item.id}','${g.id}','opponent',this.value)"></td>
       <td><input type="text" value="${g.score||''}" placeholder="例如8:5" style="font-size:12.5px;width:80px;" onchange="updateScheduleSubGameField('${item.id}','${g.id}','score',this.value)"></td>
       <td><select style="font-size:12.5px;" onchange="updateScheduleSubGameField('${item.id}','${g.id}','result',this.value)">
@@ -3522,9 +3523,9 @@ function renderScheduleSubGames(item){
     </tr>`).join('');
 
   return `<div style="background:#15152F;border:1px solid var(--line);border-radius:8px;padding:12px;">
-    <div style="font-size:12.5px;color:var(--grey);font-weight:700;margin-bottom:8px;">各場對戰記錄（盃賽/聯賽可能一次對戰多支隊伍，每場分別記錄對手、勝負、MVP）</div>
+    <div style="font-size:12.5px;color:var(--grey);font-weight:700;margin-bottom:8px;">各場對戰記錄（盃賽/聯賽可能橫跨多天、對戰多支隊伍，每場可各自填日期、對手、勝負、MVP，不用另開新賽事）</div>
     ${games.length ? `<div style="overflow-x:auto;"><table style="font-size:12.5px;">
-      <thead><tr><th>對手</th><th>比數</th><th>勝負</th><th>MVP</th><th></th></tr></thead>
+      <thead><tr><th>日期</th><th>對手</th><th>比數</th><th>勝負</th><th>MVP</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
     </table></div>` : `<div class="empty" style="padding:6px 0;">尚未新增任何對戰紀錄</div>`}
     <button class="btn btn-ghost" style="width:100%;margin-top:10px;" onclick="addScheduleSubGame('${item.id}')">＋ 新增一場對戰</button>
@@ -3687,14 +3688,23 @@ function renderHomeCalendar(){
   const startWeekday = firstDay.getDay(); // 0=日 ... 6=六
   const todayStrVal = todayStr();
 
-  // 把本月每一天有安排的行程整理起來
+  // 把本月每一天有安排的行程整理起來（含盃賽/聯賽底下各場對戰的個別日期，讓多日賽事每天都會顯示）
   const eventsByDate = {};
-  state.schedule.forEach(s=>{
-    if(!s.date) return;
-    const d = new Date(s.date);
+  const addEvent = (dateStr, s) => {
+    if(!dateStr) return;
+    const d = new Date(dateStr);
     if(d.getFullYear()===year && d.getMonth()===month){
-      if(!eventsByDate[s.date]) eventsByDate[s.date] = [];
-      eventsByDate[s.date].push(s);
+      if(!eventsByDate[dateStr]) eventsByDate[dateStr] = [];
+      eventsByDate[dateStr].push(s);
+    }
+  };
+  state.schedule.forEach(s=>{
+    if(s.games && s.games.length){
+      const gameDates = new Set(s.games.map(g=>g.date||s.date).filter(Boolean));
+      if(gameDates.size===0) addEvent(s.date, s);
+      else gameDates.forEach(d=>addEvent(d, s));
+    } else {
+      addEvent(s.date, s);
     }
   });
 
