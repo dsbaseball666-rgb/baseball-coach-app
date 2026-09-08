@@ -1106,6 +1106,16 @@
           <button class="btn ghost" id="swFillBtn">帶入數值欄位</button>
         </div>
       </div>
+      <div class="stopwatch" id="multiAttemptBox" style="display:none;">
+        <div class="sw-head">
+          <span class="sw-label">10次測試（自動取平均值帶入數值欄位）</span>
+          <span class="sw-display" id="multiAttemptAvg" style="font-size:22px;">平均 -</span>
+        </div>
+        <div id="multiAttemptGrid" style="display:grid;grid-template-columns:repeat(5, 1fr);gap:8px;margin-top:8px;"></div>
+        <div class="actions" style="margin-top:10px;">
+          <button class="btn ghost" id="multiAttemptClearBtn">清空10次數值</button>
+        </div>
+      </div>
       <label for="fNote">備註（選填）</label>
       <input type="text" id="fNote" placeholder="例如：帶傷測驗、場地濕滑等">
       <div class="actions">
@@ -1386,6 +1396,19 @@
       <button class="btn btn-ghost" onclick="cancelSharePreview()">取消</button>
     </div>
     <p style="font-size:11.5px;color:var(--grey);text-align:center;margin:0;">選 LINE／Facebook 會自動下載圖片＋複製文字，並開啟分享頁面，請在該頁面手動「附加圖片」</p>
+  </div>
+</div>
+
+<div id="velocity-attempts-modal" style="display:none;position:fixed;inset:0;z-index:200;background:rgba(6,6,16,0.75);align-items:center;justify-content:center;padding:20px;">
+  <div style="background:linear-gradient(180deg, var(--card-2), var(--card));border:2px solid var(--frame);border-radius:4px;padding:22px;max-width:min(94vw,420px);box-shadow:0 8px 0 rgba(0,0,0,0.35);">
+    <h2 id="velocity-modal-title" style="margin:0 0 4px;font-family:'DotGothic16',sans-serif;font-weight:400;color:var(--gold-2);font-size:15px;letter-spacing:0.05em;">10次測試</h2>
+    <p style="font-size:11.5px;color:var(--grey);margin:0 0 12px;">輸入後自動計算平均值，帶回主畫面該球員的欄位</p>
+    <div id="velocity-modal-avg" style="text-align:center;font-size:20px;font-weight:700;color:var(--gold-2);margin-bottom:10px;">平均 -</div>
+    <div id="velocity-modal-grid" style="display:grid;grid-template-columns:repeat(5, 1fr);gap:8px;"></div>
+    <div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end;">
+      <button class="btn btn-ghost" onclick="closeVelocityAttemptsModal()">取消</button>
+      <button class="btn btn-primary" onclick="confirmVelocityAttempts()">確認帶入</button>
+    </div>
   </div>
 </div>
 
@@ -5691,6 +5714,7 @@ const ITEMS = {
 };
 
 let records = [];
+const VELOCITY_ITEMS = ['揮棒速度','擊球初速','投球球速'];
 let currentRosterNames = [];
 let heatGroupsData = {}; // { 組別名稱: [球員姓名,...] }
 
@@ -5742,6 +5766,52 @@ function updateUnitHint(){
   document.getElementById('fUnit').textContent = cfg.unit;
   document.getElementById('fHint').textContent = cfg.hint;
   document.getElementById('stopwatchBox').style.display = (cfg.unit === '秒') ? 'block' : 'none';
+
+  const isVelocity = VELOCITY_ITEMS.includes(item);
+  document.getElementById('multiAttemptBox').style.display = isVelocity ? 'block' : 'none';
+  const fValueEl = document.getElementById('fValue');
+  if(isVelocity){
+    fValueEl.readOnly = true;
+    fValueEl.placeholder = '由下方10次測試自動計算';
+    renderMultiAttemptGrid();
+  } else {
+    fValueEl.readOnly = false;
+    fValueEl.placeholder = '輸入數值';
+  }
+}
+
+function renderMultiAttemptGrid(){
+  const box = document.getElementById('multiAttemptGrid');
+  if(!box) return;
+  box.innerHTML = Array.from({length:10}, (_,i)=>
+    `<input type="number" step="0.1" id="attempt${i+1}" placeholder="第${i+1}次" style="text-align:center;" oninput="updateMultiAttemptAverage()">`
+  ).join('');
+}
+
+function updateMultiAttemptAverage(){
+  const values = [];
+  for(let i=1; i<=10; i++){
+    const el = document.getElementById(`attempt${i}`);
+    if(el && el.value !== '') values.push(Number(el.value));
+  }
+  const avgEl = document.getElementById('multiAttemptAvg');
+  const fValueEl = document.getElementById('fValue');
+  if(values.length === 0){
+    avgEl.textContent = '平均 -';
+    fValueEl.value = '';
+    return;
+  }
+  const avg = values.reduce((s,v)=>s+v,0) / values.length;
+  avgEl.textContent = `平均 ${avg.toFixed(1)}（共${values.length}次）`;
+  fValueEl.value = avg.toFixed(1);
+}
+
+function clearMultiAttempts(){
+  for(let i=1; i<=10; i++){
+    const el = document.getElementById(`attempt${i}`);
+    if(el) el.value = '';
+  }
+  updateMultiAttemptAverage();
 }
 
 // ---- 模式切換 ----
@@ -5962,6 +6032,59 @@ function nextHeatLabel(current){
 // ---- 群體測驗：球員清單 ----
 let gmValues = {};
 
+/* ---------- 群體測驗：10次取平均(揮棒速度/擊球初速/投球球速) ---------- */
+let gmAttempts = {}; // { 球員姓名: [10次數值,...] }
+let velocityModalContext = null; // 目前正在輸入的球員姓名
+
+function openVelocityAttemptsModal(name){
+  velocityModalContext = name;
+  document.getElementById('velocity-modal-title').textContent = `${name} — 10次測試`;
+  const grid = document.getElementById('velocity-modal-grid');
+  const saved = gmAttempts[name] || [];
+  grid.innerHTML = Array.from({length:10}, (_,i)=>
+    `<input type="number" step="0.1" id="vAttempt${i+1}" value="${saved[i]!==undefined?saved[i]:''}" placeholder="第${i+1}次" style="text-align:center;" oninput="updateVelocityModalAverage()">`
+  ).join('');
+  updateVelocityModalAverage();
+  document.getElementById('velocity-attempts-modal').style.display = 'flex';
+}
+
+function closeVelocityAttemptsModal(){
+  document.getElementById('velocity-attempts-modal').style.display = 'none';
+  velocityModalContext = null;
+}
+
+function updateVelocityModalAverage(){
+  const values = [];
+  for(let i=1; i<=10; i++){
+    const el = document.getElementById(`vAttempt${i}`);
+    if(el && el.value !== '') values.push(Number(el.value));
+  }
+  const avgEl = document.getElementById('velocity-modal-avg');
+  if(values.length===0){ avgEl.textContent = '平均 -'; return; }
+  const avg = values.reduce((s,v)=>s+v,0) / values.length;
+  avgEl.textContent = `平均 ${avg.toFixed(1)}（共${values.length}次）`;
+}
+
+function confirmVelocityAttempts(){
+  if(!velocityModalContext) return;
+  const name = velocityModalContext;
+  const values = [];
+  for(let i=1; i<=10; i++){
+    const el = document.getElementById(`vAttempt${i}`);
+    values.push(el && el.value !== '' ? Number(el.value) : undefined);
+  }
+  gmAttempts[name] = values;
+  const filled = values.filter(v=>v!==undefined);
+  if(filled.length > 0){
+    const avg = (filled.reduce((s,v)=>s+v,0) / filled.length).toFixed(1);
+    gmValues[name] = avg;
+    const input = document.querySelector(`#gmList input[data-player="${CSS.escape(name)}"]`);
+    if(input) input.value = avg;
+    updateFilledCount();
+  }
+  closeVelocityAttemptsModal();
+}
+
 function renderGroupList(){
   const item = document.getElementById('gmItem').value;
   const cfg = ITEMS[item];
@@ -5973,6 +6096,7 @@ function renderGroupList(){
   const roster = isTimed ? PLAYERS.filter(([cls,name])=> heatSelected[name]) : PLAYERS;
   currentRosterNames = roster.map(([cls,name])=>name);
 
+  const isVelocityItem = VELOCITY_ITEMS.includes(item);
   const list = document.getElementById('gmList');
   list.innerHTML = '';
   if(isTimed && roster.length === 0){
@@ -5997,6 +6121,7 @@ function renderGroupList(){
     input.type = 'number'; input.step = '0.1'; input.placeholder = cfg.unit;
     input.dataset.player = name;
     input.value = gmValues[name] || '';
+    if(isVelocityItem) input.readOnly = true;
     input.addEventListener('input', ()=>{
       gmValues[name] = input.value;
       updateFilledCount();
@@ -6004,6 +6129,14 @@ function renderGroupList(){
     });
     inputWrap.appendChild(input);
     row.appendChild(inputWrap);
+
+    if(isVelocityItem){
+      const attemptsBtn = document.createElement('button');
+      attemptsBtn.className = 'btn ghost gm-arrive';
+      attemptsBtn.textContent = '10次測試';
+      attemptsBtn.addEventListener('click', ()=> openVelocityAttemptsModal(name));
+      row.appendChild(attemptsBtn);
+    }
 
     if(isTimed){
       nameEl.addEventListener('click', ()=>{
@@ -6242,13 +6375,16 @@ document.getElementById('fItem').addEventListener('change', updateUnitHint);
 document.getElementById('saveBtn').addEventListener('click', async ()=>{
   await saveRecord();
   swReset();
+  clearMultiAttempts();
 });
 document.getElementById('clearBtn').addEventListener('click', ()=>{
   document.getElementById('fValue').value = '';
   document.getElementById('fNote').value = '';
   document.getElementById('formStatus').textContent = '';
   swReset();
+  clearMultiAttempts();
 });
+document.getElementById('multiAttemptClearBtn').addEventListener('click', clearMultiAttempts);
 document.getElementById('swStartBtn').addEventListener('click', swToggle);
 document.getElementById('swResetBtn').addEventListener('click', swReset);
 document.getElementById('swFillBtn').addEventListener('click', swFill);
