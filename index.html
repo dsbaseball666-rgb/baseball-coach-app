@@ -5714,6 +5714,7 @@ const ITEMS = {
 };
 
 let records = [];
+let growthChart, rankChart;
 const VELOCITY_ITEMS = ['揮棒速度','擊球初速','投球球速'];
 let currentRosterNames = [];
 let heatGroupsData = {}; // { 組別名稱: [球員姓名,...] }
@@ -5813,6 +5814,8 @@ function clearMultiAttempts(){
   }
   updateMultiAttemptAverage();
 }
+window.updateMultiAttemptAverage = updateMultiAttemptAverage;
+window.clearMultiAttempts = clearMultiAttempts;
 
 // ---- 模式切換 ----
 function setMode(mode){
@@ -6084,6 +6087,10 @@ function confirmVelocityAttempts(){
   }
   closeVelocityAttemptsModal();
 }
+window.openVelocityAttemptsModal = openVelocityAttemptsModal;
+window.closeVelocityAttemptsModal = closeVelocityAttemptsModal;
+window.updateVelocityModalAverage = updateVelocityModalAverage;
+window.confirmVelocityAttempts = confirmVelocityAttempts;
 
 function renderGroupList(){
   const item = document.getElementById('gmItem').value;
@@ -6430,8 +6437,6 @@ const GOLD = "#B8912B";
 const STITCH = "#A13D2C";
 const GOOD = "#2D6A4F";
 const BLUE = "#2C5FA8";
-
-let growthChart, rankChart;
 
 function ratingColor(r){
   if(r==="優") return GOOD; if(r==="佳") return BLUE; if(r==="普") return GOLD; if(r==="不及格") return STITCH;
