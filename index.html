@@ -1118,6 +1118,7 @@
   <div class="card">
     <h2>📊 速度檢測評級標準（讓球員都能對照自己目前的等級）</h2>
     <div id="velocity-standards-table" style="overflow-x:auto;"></div>
+    <button class="btn ghost" style="margin-top:14px;" id="recalcRatingsBtn">🔄 依目前標準重新評級所有已存在的紀錄</button>
   </div>
 
   <div class="card">
@@ -6470,6 +6471,20 @@ async function loadRecords(){
   renderWarnings();
 }
 
+async function recalculateAllRatings(){
+  let changedCount = 0;
+  records.forEach(r=>{
+    const newRating = ratingOf(r.item, r.value);
+    if(newRating !== r.rating){
+      r.rating = newRating;
+      changedCount++;
+    }
+  });
+  await persist();
+  renderTable();
+  toast(`已重新評級，共更新 ${changedCount} 筆紀錄`);
+}
+
 async function persist(){
   if(bc5bDocRef){
     try{
@@ -6653,6 +6668,7 @@ document.getElementById('gmClearAllBtn').addEventListener('click', clearGroupAll
 document.getElementById('filterPlayer').addEventListener('change', renderTable);
 document.getElementById('filterItem').addEventListener('change', renderTable);
 document.getElementById('exportBtn').addEventListener('click', exportCSV);
+document.getElementById('recalcRatingsBtn').addEventListener('click', recalculateAllRatings);
 
 
 const FIELD = "#1B4332";
