@@ -670,7 +670,10 @@
         <div style="margin-top:14px;"><button class="btn btn-primary" onclick="addScheduleItem()">＋ 新增行程</button></div>
       </div>
 
-      <h2 style="margin-bottom:10px;">賽事/行程列表</h2>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px;">
+        <h2 style="margin:0;">賽事/行程列表</h2>
+        <button id="schedule-hidden-toggle" class="btn btn-ghost" style="display:none;" onclick="toggleScheduleShowHiddenList()"></button>
+      </div>
       <div id="schedule-table" style="display:grid;grid-template-columns:repeat(auto-fill, minmax(420px, 1fr));gap:14px;"></div>
 
       <div class="card" style="margin-top:24px;">
@@ -1018,6 +1021,24 @@
       </div>
 
       <div id="practice-list" class="card-grid"></div>
+    </div>
+
+    <!-- ================= MEETINGS (會議記錄) ================= -->
+    <div class="page" id="page-meetings">
+      <h1 class="page-title">會議記錄</h1>
+      <p class="page-desc">家長座談會、器材採購會議等，獨立記錄，不與比賽/活動混在一起</p>
+
+      <div class="card">
+        <h2>新增會議</h2>
+        <div class="grid grid-2">
+          <div><label>日期</label><input type="date" id="meeting-date"></div>
+          <div><label>會議名稱</label><input type="text" id="meeting-title" placeholder="例如：家長座談會、器材採購會議"></div>
+        </div>
+        <div style="margin-top:14px;"><label>內容/備註</label><textarea id="meeting-note" placeholder="會議地點、時間、討論事項等"></textarea></div>
+        <div style="margin-top:14px;"><button class="btn btn-primary" onclick="addMeeting()">＋ 新增會議</button></div>
+      </div>
+
+      <div id="meetings-list" class="card-grid"></div>
     </div>
 
 
@@ -1422,14 +1443,14 @@
 
 <div id="calendar-quickadd-modal" style="display:none;position:fixed;inset:0;z-index:200;background:rgba(6,6,16,0.75);align-items:center;justify-content:center;padding:20px;">
   <div style="background:linear-gradient(180deg, var(--card-2), var(--card));border:2px solid var(--frame);border-radius:4px;padding:22px;max-width:min(92vw,420px);box-shadow:0 8px 0 rgba(0,0,0,0.35);">
-    <h2 style="margin:0 0 14px;font-family:'DotGothic16',sans-serif;font-weight:400;color:var(--gold-2);font-size:15px;letter-spacing:0.05em;">📆 快速新增活動/會議</h2>
+    <h2 style="margin:0 0 14px;font-family:'DotGothic16',sans-serif;font-weight:400;color:var(--gold-2);font-size:15px;letter-spacing:0.05em;">📆 快速新增活動</h2>
     <div style="margin-bottom:10px;"><label>日期</label><input type="date" id="qa-date"></div>
     <div style="margin-bottom:10px;"><label>類型</label>
       <select id="qa-type">
-        <option>會議</option><option>活動</option><option>練習賽</option><option>正式比賽</option><option>循環賽</option><option>其他</option>
+        <option>活動</option><option>練習賽</option><option>正式比賽</option><option>循環賽</option><option>其他</option>
       </select>
     </div>
-    <div style="margin-bottom:10px;"><label>事項名稱</label><input type="text" id="qa-title" placeholder="例如：家長座談會、器材採購會議"></div>
+    <div style="margin-bottom:10px;"><label>事項名稱</label><input type="text" id="qa-title" placeholder="例如：家長座談會、器材採購"></div>
     <div style="margin-bottom:10px;"><label>集合/開始時間</label><input type="text" id="qa-time" placeholder="選填，例如 19:00"></div>
     <div><label>備註</label><input type="text" id="qa-note" placeholder="選填"></div>
     <div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end;">
@@ -1489,6 +1510,7 @@ let state = {
   intraSquadSessions: [], // [{id, date, note, teamAName, teamBName, teamAPlayers:[], teamBPlayers:[]}] 每場比賽獨立分兩隊,不受其他場次限制
   budgetEntries: [], // [{id, date, type:'隊費收入'|'其餘收入'|'支出', item, amount, note}] 經費收支帳本
   budgetPlan: { 車資:100000, 餐費:50000, 服裝:50000, 其餘:28000 }, // 年度/賽季預算分配計畫,圓餅圖用
+  meetings: [], // [{id, date, title, note}] 會議記錄,獨立於賽事管理之外
 };
 
 // 目前在隊球員姓名清單（供各分頁下拉選單使用）
@@ -1706,7 +1728,7 @@ function fillNameSelects(){
 }
 
 function setDatesToday(){
-  ['pitch-date','injury-date','growth-date','att-date','fee-date','leave-start','intrasquad-date-input','budget-date'].forEach(id=>{
+  ['pitch-date','injury-date','growth-date','att-date','fee-date','leave-start','intrasquad-date-input','budget-date','meeting-date'].forEach(id=>{
     document.getElementById(id).value = todayStr();
   });
   const monthlySel = document.getElementById('monthly-select');
@@ -1728,6 +1750,7 @@ const TABS_CONFIG = [
   { page:'cleaning',   num:'11', label:'球場打掃分組' },
   { page:'fees',       num:'12', label:'預算管理' },
   { page:'practice',   num:'13', label:'練球通知' },
+  { page:'meetings',   num:'14', label:'會議記錄' },
 ];
 
 let currentPage = 'home';
@@ -2825,6 +2848,7 @@ const HOME_NAV_ITEMS = [
   { page:'cleaning',   icon:'🧹', label:'球場打掃分組',   num:'11' },
   { page:'fees',       icon:'💰', label:'預算管理',       num:'12' },
   { page:'practice',   icon:'📢', label:'練球通知',       num:'13' },
+  { page:'meetings',   icon:'📝', label:'會議記錄',       num:'14' },
 ];
 
 function renderHomeNav(){
@@ -3017,6 +3041,12 @@ function exportToExcel(){
   }));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(practiceRows.length?practiceRows:[{提示:'尚無資料'}]), '練球通知');
 
+  // 會議記錄
+  const meetingRows = state.meetings.map(m=>({
+    日期:m.date, 會議名稱:m.title, 內容備註:m.note||''
+  }));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(meetingRows.length?meetingRows:[{提示:'尚無資料'}]), '會議記錄');
+
   // 繳費清冊明細(每筆收費通知 x 該筆通知實際的收款名單)
   const feeRosterRows = [];
   state.feeNotices.forEach(f=>{
@@ -3060,8 +3090,8 @@ function exportToExcel(){
 }
 
 /* ---------- Schedule (近期賽事安排) ---------- */
-const SCH_TYPES = ['正式比賽','練習賽','循環賽','活動','會議','其他'];
-const SCH_TYPE_PILL = { '正式比賽':'pill-danger', '循環賽':'pill-warn', '練習賽':'pill-blue', '活動':'pill-grey', '會議':'pill-ok', '其他':'pill-grey' };
+const SCH_TYPES = ['正式比賽','練習賽','循環賽','活動','其他'];
+const SCH_TYPE_PILL = { '正式比賽':'pill-danger', '循環賽':'pill-warn', '練習賽':'pill-blue', '活動':'pill-grey', '其他':'pill-grey' };
 
 function generateTimeOptions15min(selected){
   let html = '<option value="">未指定</option>';
@@ -3575,9 +3605,32 @@ function exportScheduleHistoryExcel(){
   toast('已匯出歷年賽事成績 Excel');
 }
 
+let scheduleShowHidden = false;
+
+function toggleScheduleHidden(id){
+  const item = state.schedule.find(s=>s.id===id);
+  if(!item) return;
+  item.hidden = !item.hidden;
+  saveState();
+  renderSchedule();
+  renderHomeCalendar();
+}
+
+function toggleScheduleShowHiddenList(){
+  scheduleShowHidden = !scheduleShowHidden;
+  renderSchedule();
+}
+
 function renderSchedule(){
   const box = document.getElementById('schedule-table');
-  const items = sortedSchedule();
+  const allItems = sortedSchedule();
+  const hiddenCount = allItems.filter(s=>s.hidden).length;
+  const toggleBtn = document.getElementById('schedule-hidden-toggle');
+  if(toggleBtn){
+    toggleBtn.textContent = scheduleShowHidden ? `▲ 收合已隱藏賽事` : `▼ 顯示已隱藏的賽事（${hiddenCount}）`;
+    toggleBtn.style.display = hiddenCount > 0 ? 'inline-flex' : 'none';
+  }
+  const items = scheduleShowHidden ? allItems : allItems.filter(s=>!s.hidden);
   if(items.length===0){
     box.innerHTML = `<div class="card"><div class="empty">尚無安排，請於上方新增</div></div>`;
     return;
@@ -3602,8 +3655,8 @@ function renderSchedule(){
     const expanded = scheduleRosterExpanded.has(s.id);
     const pillClass = SCH_TYPE_PILL[s.type] || 'pill-grey';
 
-    return `<div class="card" style="${isPast?'opacity:.55;':''}">
-      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
+    return `<div class="card" style="${isPast?'opacity:.55;':''}${s.hidden?'border-color:var(--sun);':''}">
+      ${s.hidden ? `<div style="font-size:11px;color:var(--sun);font-weight:700;margin-bottom:8px;">🙈 已隱藏（不會出現在一般列表中）</div>` : ''}      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
           <input type="date" value="${s.date}" style="width:150px;font-weight:700;" onchange="updateScheduleField('${s.id}','date',this.value); renderSchedule();">
           <select style="width:auto;" onchange="updateScheduleField('${s.id}','type',this.value); renderSchedule();">${opts}</select>
@@ -3614,6 +3667,7 @@ function renderSchedule(){
           <button class="icon-btn" onclick="openScheduleLineupModal('${s.id}')">⚾ 先發名單(${(s.startingLineup||[]).length})</button>
           <button class="icon-btn" onclick="shareScheduleItem('${s.id}')">分享</button>
           ${isLodging ? `<button class="icon-btn" onclick="createFeeNoticeFromSchedule('${s.id}')">建立收費通知</button>` : ''}
+          <button class="icon-btn" onclick="toggleScheduleHidden('${s.id}')">${s.hidden?'👁 取消隱藏':'🙈 隱藏'}</button>
           <button class="icon-btn" onclick="deleteScheduleItem('${s.id}')">刪除</button>
         </div>
       </div>
@@ -3663,7 +3717,7 @@ function renderHomeSchedule(){
 /* ---------- 首頁：當月行程月曆 ---------- */
 function openCalendarQuickAdd(dateStr){
   document.getElementById('qa-date').value = dateStr;
-  document.getElementById('qa-type').value = '會議';
+  document.getElementById('qa-type').value = '活動';
   document.getElementById('qa-title').value = '';
   document.getElementById('qa-time').value = '';
   document.getElementById('qa-note').value = '';
@@ -3721,7 +3775,7 @@ function renderHomeCalendar(){
       eventsByDate[dateStr].push(s);
     }
   };
-  state.schedule.forEach(s=>{
+  state.schedule.filter(s=>!s.hidden).forEach(s=>{
     if(s.games && s.games.length){
       const gameDates = new Set(s.games.map(g=>g.date||s.date).filter(Boolean));
       if(gameDates.size===0) addEvent(s.date, s);
@@ -3754,7 +3808,7 @@ function renderHomeCalendar(){
     html += `<div class="cal-day${isToday?' today':''}" style="position:relative;">
       <div style="display:flex;justify-content:space-between;align-items:center;">
         <div class="cal-daynum">${d}</div>
-        <span onclick="openCalendarQuickAdd('${dateStr}')" style="cursor:pointer;color:var(--gold);font-weight:700;font-size:12px;line-height:1;" title="快速新增活動/會議">＋</span>
+        <span onclick="openCalendarQuickAdd('${dateStr}')" style="cursor:pointer;color:var(--gold);font-weight:700;font-size:12px;line-height:1;" title="快速新增活動">＋</span>
       </div>
       ${eventsHtml}${moreHtml}
     </div>`;
@@ -4608,6 +4662,53 @@ function deletePracticeNotice(id){
 
 function sortedPracticeNotices(){
   return [...state.practiceNotices].sort((a,b)=> a.date.localeCompare(b.date));
+}
+
+/* ---------- 會議記錄 ---------- */
+function addMeeting(){
+  const date = document.getElementById('meeting-date').value || todayStr();
+  const title = document.getElementById('meeting-title').value.trim();
+  const note = document.getElementById('meeting-note').value.trim();
+  if(!title){ toast('請輸入會議名稱'); return; }
+
+  state.meetings.unshift({ id: uid(), date, title, note });
+  document.getElementById('meeting-title').value = '';
+  document.getElementById('meeting-note').value = '';
+  saveState();
+  renderMeetings();
+  toast('已新增會議記錄');
+}
+
+function deleteMeeting(id){
+  state.meetings = state.meetings.filter(m=>m.id!==id);
+  saveState();
+  renderMeetings();
+}
+
+function updateMeetingField(id, field, value){
+  const m = state.meetings.find(m=>m.id===id);
+  if(!m) return;
+  m[field] = value;
+  saveState();
+}
+
+function renderMeetings(){
+  const box = document.getElementById('meetings-list');
+  if(!box) return;
+  if(state.meetings.length === 0){
+    box.innerHTML = `<div class="card"><div class="empty">尚無會議記錄，請於上方新增</div></div>`;
+    return;
+  }
+  const sorted = [...state.meetings].sort((a,b)=> b.date.localeCompare(a.date));
+  box.innerHTML = sorted.map(m=>`
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <input type="date" value="${m.date}" style="font-weight:700;width:150px;" onchange="updateMeetingField('${m.id}','date',this.value)">
+        <button class="icon-btn" onclick="deleteMeeting('${m.id}')">刪除</button>
+      </div>
+      <input type="text" value="${m.title}" style="font-weight:700;margin-bottom:8px;" onchange="updateMeetingField('${m.id}','title',this.value)">
+      <textarea onchange="updateMeetingField('${m.id}','note',this.value)">${m.note||''}</textarea>
+    </div>`).join('');
 }
 
 function renderPracticeNotices(){
@@ -5684,6 +5785,7 @@ function renderAll(){
   renderLeaveRequests();
   renderTutoringList();
   renderPracticeNotices();
+  renderMeetings();
   renderHomeNav();
   renderHome();
 }
