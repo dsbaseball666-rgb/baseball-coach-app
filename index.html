@@ -221,6 +221,18 @@
   .nav-tile .nav-label{font-size:12px;font-weight:700;color:var(--ink);line-height:1.3;}
   .nav-tile .nav-num{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--grey);}
 
+  .feature-modal-overlay{
+    display:none;position:fixed;inset:0;z-index:200;background:rgba(6,6,16,0.8);
+    align-items:flex-start;justify-content:center;padding:20px;overflow-y:auto;
+  }
+  .feature-modal-box{
+    background:linear-gradient(180deg, var(--card-2), var(--card));border:2px solid var(--frame);border-radius:4px;
+    padding:22px;max-width:min(96vw,900px);width:100%;margin:20px auto;box-shadow:0 8px 0 rgba(0,0,0,0.35);
+  }
+  .feature-modal-close{
+    position:sticky;top:0;display:flex;justify-content:flex-end;margin-bottom:-10px;z-index:2;
+  }
+
   .cal-grid{display:grid;grid-template-columns:repeat(7, 1fr);gap:4px;}
   .cal-weekday{text-align:center;font-size:11px;font-weight:700;color:var(--grey);padding:4px 0;text-transform:uppercase;}
   .cal-day{
@@ -605,8 +617,17 @@
 
     <!-- ================= SCHEDULE ================= -->
     <div class="page" id="page-schedule">
-      <h1 class="page-title">賽事管理</h1>
-      <p class="page-desc">可隨時新增、修改、刪除比賽/活動等行程，並一鍵分享給家長；下方也能查看歷年賽事成績</p>
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;">
+        <div>
+          <h1 class="page-title">球隊賽事</h1>
+          <p class="page-desc">可隨時新增、修改、刪除比賽/活動等行程，並一鍵分享給家長；下方也能查看歷年賽事成績</p>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn btn-ghost" onclick="openFeatureModal('intrasquad')">🆚 隊內分組賽名單</button>
+          <button class="btn btn-ghost" onclick="openFeatureModal('pitch')">🎯 投手球數</button>
+          <button class="btn btn-ghost" onclick="openFeatureModal('meetings')">📝 會議記錄</button>
+        </div>
+      </div>
 
       <div class="card">
         <h2>新增行程</h2>
@@ -687,7 +708,7 @@
 
     <!-- ================= ATTENDANCE ================= -->
     <div class="page" id="page-attendance">
-      <h1 class="page-title">點名 / 請假單</h1>
+      <h1 class="page-title">出缺席名單</h1>
       <p class="page-desc">記錄每日出缺席，並可直接登記請假紀錄</p>
 
       <div class="card">
@@ -777,8 +798,17 @@
 
     <!-- ================= PLAYERS ================= -->
     <div class="page" id="page-players">
-      <h1 class="page-title">球員名單</h1>
-      <p class="page-desc">可隨時新增、修改、刪除球員資料，異動即時儲存</p>
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;">
+        <div>
+          <h1 class="page-title">球員名單</h1>
+          <p class="page-desc">可隨時新增、修改、刪除球員資料，異動即時儲存</p>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn btn-ghost" onclick="openFeatureModal('positions')">⚾ 球員守備位子</button>
+          <button class="btn btn-ghost" onclick="openFeatureModal('growth')">📈 成長管理</button>
+          <button class="btn btn-ghost" onclick="openFeatureModal('injury')">🩹 傷兵管理</button>
+        </div>
+      </div>
 
       <div class="card">
         <h2>組別管理（含小隊長）</h2>
@@ -794,9 +824,10 @@
 
       <div class="card">
         <h2>新增球員</h2>
-        <div class="grid grid-2">
+        <div class="grid grid-3">
           <div><label>姓名</label><input type="text" id="new-player-name" placeholder="輸入姓名"></div>
-          <div><label>背號</label><input type="text" id="new-player-number" placeholder="選填，例如：7"></div>
+          <div><label>班級</label><input type="text" id="new-player-class" placeholder="選填，例如：一年一班"></div>
+          <div><label>座號</label><input type="text" id="new-player-seat" placeholder="選填，例如：12"></div>
         </div>
         <div style="margin-top:14px;"><button class="btn btn-primary" onclick="addPlayer()">＋ 新增球員</button></div>
       </div>
@@ -805,184 +836,199 @@
     </div>
 
     <!-- ================= FIELDING POSITIONS (球員守備位子) ================= -->
-    <div class="page" id="page-positions">
-      <h1 class="page-title">球員守備位子</h1>
-      <p class="page-desc">點擊球場上的守備位置，即可查看/新增/移除該位置的球員</p>
+    <div id="modal-positions" class="feature-modal-overlay">
+      <div class="feature-modal-box">
+        <div class="feature-modal-close"><button class="btn btn-ghost" onclick="closeFeatureModal('positions')">✕ 關閉</button></div>
+        <h1 class="page-title">球員守備位子</h1>
+        <p class="page-desc">點擊球場上的守備位置，即可查看/新增/移除該位置的球員</p>
 
-      <div class="card">
-        <div id="positions-diamond" style="max-width:600px;margin:0 auto;"></div>
-      </div>
+        <div class="card">
+          <div id="positions-diamond" style="max-width:600px;margin:0 auto;"></div>
+        </div>
 
-      <div class="card">
-        <h2 id="positions-detail-title">請點選上方守備位置</h2>
-        <div id="positions-detail"></div>
+        <div class="card">
+          <h2 id="positions-detail-title">請點選上方守備位置</h2>
+          <div id="positions-detail"></div>
+        </div>
       </div>
     </div>
 
     <!-- ================= INTRA-SQUAD TEAMS (隊內分組賽名單) ================= -->
-    <div class="page" id="page-intrasquad">
-      <h1 class="page-title">隊內分組賽名單</h1>
-      <p class="page-desc">每場比賽獨立建立兩隊分組，同一場次內選過的球員不會重複出現在另一隊；不同場次互不影響</p>
+    <div id="modal-intrasquad" class="feature-modal-overlay">
+      <div class="feature-modal-box">
+        <div class="feature-modal-close"><button class="btn btn-ghost" onclick="closeFeatureModal('intrasquad')">✕ 關閉</button></div>
+        <h1 class="page-title">隊內分組賽名單</h1>
+        <p class="page-desc">每場比賽獨立建立兩隊分組，同一場次內選過的球員不會重複出現在另一隊；不同場次互不影響</p>
 
-      <div class="card">
-        <h2>新增比賽場次</h2>
-        <div class="grid grid-3">
-          <div><label>日期</label><input type="date" id="intrasquad-date-input"></div>
-          <div><label>A隊名稱</label><input type="text" id="intrasquad-teamA-input" placeholder="例如：紅隊"></div>
-          <div><label>B隊名稱</label><input type="text" id="intrasquad-teamB-input" placeholder="例如：藍隊"></div>
+        <div class="card">
+          <h2>新增比賽場次</h2>
+          <div class="grid grid-3">
+            <div><label>日期</label><input type="date" id="intrasquad-date-input"></div>
+            <div><label>A隊名稱</label><input type="text" id="intrasquad-teamA-input" placeholder="例如：紅隊"></div>
+            <div><label>B隊名稱</label><input type="text" id="intrasquad-teamB-input" placeholder="例如：藍隊"></div>
+          </div>
+          <div style="margin-top:14px;"><label>備註</label><input type="text" id="intrasquad-note-input" placeholder="選填，例如：隊內紅白賽"></div>
+          <div style="margin-top:14px;"><button class="btn btn-primary" onclick="addIntraSquadSession()">＋ 新增場次</button></div>
         </div>
-        <div style="margin-top:14px;"><label>備註</label><input type="text" id="intrasquad-note-input" placeholder="選填，例如：隊內紅白賽"></div>
-        <div style="margin-top:14px;"><button class="btn btn-primary" onclick="addIntraSquadSession()">＋ 新增場次</button></div>
-      </div>
 
-      <div id="intrasquad-list" style="display:grid;grid-template-columns:repeat(auto-fill, minmax(580px, 1fr));gap:14px;"></div>
+        <div id="intrasquad-list" style="display:grid;grid-template-columns:repeat(auto-fill, minmax(400px, 1fr));gap:14px;"></div>
+      </div>
     </div>
 
     <!-- ================= PITCH COUNT ================= -->
-    <div class="page" id="page-pitch">
-      <h1 class="page-title">投手球數</h1>
-      <p class="page-desc">每次投球後登記，系統自動加總本週用球量並於超過 100 顆時警示</p>
+    <div id="modal-pitch" class="feature-modal-overlay">
+      <div class="feature-modal-box">
+        <div class="feature-modal-close"><button class="btn btn-ghost" onclick="closeFeatureModal('pitch')">✕ 關閉</button></div>
+        <h1 class="page-title">投手球數</h1>
+        <p class="page-desc">每次投球後登記，系統自動加總本週用球量並於超過 100 顆時警示</p>
 
-      <div class="card">
-        <h2>投手名單管理</h2>
-        <p class="page-desc" style="margin-bottom:12px;padding-left:0;">只有這份名單裡的球員會出現在下方「姓名」選單中，可隨時新增/移除</p>
-        <div id="pitcher-roster-list" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;"></div>
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-          <select id="pitcher-roster-add" style="max-width:200px;"></select>
-          <button class="btn btn-ghost" onclick="addPitcherToRoster()">＋ 加入投手名單</button>
-        </div>
-      </div>
-
-      <div class="card">
-        <h2>新增紀錄（逐顆記錄）</h2>
-        <div class="grid grid-3">
-          <div><label>日期</label><input type="date" id="pitch-date"></div>
-          <div><label>姓名</label><select id="pitch-name"></select></div>
-          <div><label>類型</label><select id="pitch-type"><option>練習</option><option>比賽</option></select></div>
-        </div>
-        <div class="grid grid-3" style="margin-top:14px;">
-          <div><label>局數</label><input type="number" id="pitch-ip" min="0" step="0.1" placeholder="選填"></div>
-          <div style="grid-column:span 2;"><label>備註</label><input type="text" id="pitch-note" placeholder="選填"></div>
+        <div class="card">
+          <h2>投手名單管理</h2>
+          <p class="page-desc" style="margin-bottom:12px;padding-left:0;">只有這份名單裡的球員會出現在下方「姓名」選單中，可隨時新增/移除</p>
+          <div id="pitcher-roster-list" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;"></div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <select id="pitcher-roster-add" style="max-width:200px;"></select>
+            <button class="btn btn-ghost" onclick="addPitcherToRoster()">＋ 加入投手名單</button>
+          </div>
         </div>
 
-        <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--line);">
-          <h2 style="margin-bottom:10px;">逐顆輸入</h2>
+        <div class="card">
+          <h2>新增紀錄（逐顆記錄）</h2>
           <div class="grid grid-3">
-            <div><label>球種</label>
-              <select id="pitch-current-type">
-                <option>直球</option><option>曲球</option><option>滑球</option><option>變速球</option><option>伸卡球</option>
-              </select>
-            </div>
-            <div><label>球速（km/h）</label><input type="number" id="pitch-current-speed" min="0" placeholder="例如 130"></div>
-            <div><label>轉速（rpm）</label><input type="number" id="pitch-current-spin" min="0" placeholder="例如 1900"></div>
+            <div><label>日期</label><input type="date" id="pitch-date"></div>
+            <div><label>姓名</label><select id="pitch-name"></select></div>
+            <div><label>類型</label><select id="pitch-type"><option>練習</option><option>比賽</option></select></div>
           </div>
-          <div style="margin-top:14px;"><button class="btn btn-ghost" onclick="addSinglePitch()">＋ 加入這顆</button></div>
+          <div class="grid grid-3" style="margin-top:14px;">
+            <div><label>局數</label><input type="number" id="pitch-ip" min="0" step="0.1" placeholder="選填"></div>
+            <div style="grid-column:span 2;"><label>備註</label><input type="text" id="pitch-note" placeholder="選填"></div>
+          </div>
 
-          <div style="margin-top:14px;">
-            <div style="font-size:12.5px;color:var(--grey);font-weight:700;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.04em;">
-              已記錄 <span id="pitch-session-count">0</span> 顆
+          <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--line);">
+            <h2 style="margin-bottom:10px;">逐顆輸入</h2>
+            <div class="grid grid-3">
+              <div><label>球種</label>
+                <select id="pitch-current-type">
+                  <option>直球</option><option>曲球</option><option>滑球</option><option>變速球</option><option>伸卡球</option>
+                </select>
+              </div>
+              <div><label>球速（km/h）</label><input type="number" id="pitch-current-speed" min="0" placeholder="例如 130"></div>
+              <div><label>轉速（rpm）</label><input type="number" id="pitch-current-spin" min="0" placeholder="例如 1900"></div>
             </div>
-            <div id="pitch-session-list" style="max-height:220px;overflow-y:auto;border:1px solid var(--line);border-radius:8px;"></div>
+            <div style="margin-top:14px;"><button class="btn btn-ghost" onclick="addSinglePitch()">＋ 加入這顆</button></div>
+
+            <div style="margin-top:14px;">
+              <div style="font-size:12.5px;color:var(--grey);font-weight:700;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.04em;">
+                已記錄 <span id="pitch-session-count">0</span> 顆
+              </div>
+              <div id="pitch-session-list" style="max-height:220px;overflow-y:auto;border:1px solid var(--line);border-radius:8px;"></div>
+            </div>
           </div>
+
+          <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--line);">
+            <h2 style="margin-bottom:6px;">或：單次總球數（沒有逐顆資料時使用）</h2>
+            <p class="page-desc" style="padding-left:0;margin-bottom:10px;">只知道總共丟了幾顆、沒有每顆的球種/球速時，直接填這裡即可，不用逐顆輸入</p>
+            <div class="grid grid-3">
+              <div><label>總球數</label><input type="number" id="pitch-quick-count" min="0" placeholder="例如：30"></div>
+            </div>
+          </div>
+
+          <div style="margin-top:14px;"><button class="btn btn-primary" onclick="addPitchRecord()">＋ 儲存本次投球紀錄</button></div>
         </div>
 
-        <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--line);">
-          <h2 style="margin-bottom:6px;">或：單次總球數（沒有逐顆資料時使用）</h2>
-          <p class="page-desc" style="padding-left:0;margin-bottom:10px;">只知道總共丟了幾顆、沒有每顆的球種/球速時，直接填這裡即可，不用逐顆輸入</p>
-          <div class="grid grid-3">
-            <div><label>總球數</label><input type="number" id="pitch-quick-count" min="0" placeholder="例如：30"></div>
-          </div>
+        <div class="card">
+          <h2>本週用球量總覽</h2>
+          <div id="pitch-gauges"><div class="empty">尚無紀錄</div></div>
         </div>
 
-        <div style="margin-top:14px;"><button class="btn btn-primary" onclick="addPitchRecord()">＋ 儲存本次投球紀錄</button></div>
-      </div>
-
-      <div class="card">
-        <h2>本週用球量總覽</h2>
-        <div id="pitch-gauges"><div class="empty">尚無紀錄</div></div>
-      </div>
-
-      <div class="card" style="padding:0;overflow-x:auto;">
-        <h2 style="padding:20px 22px 0;">歷史紀錄</h2>
-        <table style="margin-top:8px;">
-          <thead><tr><th>日期</th><th>姓名</th><th>類型</th><th>用球數</th><th>局數</th><th>平均球速</th><th>主要球種</th><th>備註</th><th></th></tr></thead>
-          <tbody id="pitch-table"></tbody>
-        </table>
+        <div class="card" style="padding:0;overflow-x:auto;">
+          <h2 style="padding:20px 22px 0;">歷史紀錄</h2>
+          <table style="margin-top:8px;">
+            <thead><tr><th>日期</th><th>姓名</th><th>類型</th><th>用球數</th><th>局數</th><th>平均球速</th><th>主要球種</th><th>備註</th><th></th></tr></thead>
+            <tbody id="pitch-table"></tbody>
+          </table>
+        </div>
       </div>
     </div>
 
     <!-- ================= INJURY ================= -->
-    <div class="page" id="page-injury">
-      <h1 class="page-title">傷兵管理</h1>
-      <p class="page-desc">追蹤球員傷況與訓練調整建議</p>
+    <div id="modal-injury" class="feature-modal-overlay">
+      <div class="feature-modal-box">
+        <div class="feature-modal-close"><button class="btn btn-ghost" onclick="closeFeatureModal('injury')">✕ 關閉</button></div>
+        <h1 class="page-title">傷兵管理</h1>
+        <p class="page-desc">追蹤球員傷況與訓練調整建議</p>
 
-      <div class="card">
-        <h2>新增紀錄</h2>
-        <div class="grid grid-3">
-          <div><label>姓名</label><select id="injury-name"></select></div>
-          <div><label>受傷日期</label><input type="date" id="injury-date"></div>
-          <div><label>部位</label><input type="text" id="injury-part" placeholder="例如：右肩"></div>
-        </div>
-        <div class="grid grid-2" style="margin-top:14px;">
-          <div><label>狀況描述</label><textarea id="injury-desc" placeholder="症狀、嚴重程度"></textarea></div>
-          <div><label>訓練調整建議</label><textarea id="injury-plan" placeholder="可做/不可做的訓練項目"></textarea></div>
-        </div>
-        <div class="grid grid-2" style="margin-top:14px;">
-          <div><label>目前狀態</label>
-            <select id="injury-status">
-              <option>治療中</option><option>可訓練(調整)</option><option>完全恢復</option><option>長期觀察</option>
-            </select>
+        <div class="card">
+          <h2>新增紀錄</h2>
+          <div class="grid grid-3">
+            <div><label>姓名</label><select id="injury-name"></select></div>
+            <div><label>受傷日期</label><input type="date" id="injury-date"></div>
+            <div><label>部位</label><input type="text" id="injury-part" placeholder="例如：右肩"></div>
           </div>
-          <div><label>備註</label><input type="text" id="injury-note" placeholder="選填"></div>
+          <div class="grid grid-2" style="margin-top:14px;">
+            <div><label>狀況描述</label><textarea id="injury-desc" placeholder="症狀、嚴重程度"></textarea></div>
+            <div><label>訓練調整建議</label><textarea id="injury-plan" placeholder="可做/不可做的訓練項目"></textarea></div>
+          </div>
+          <div class="grid grid-2" style="margin-top:14px;">
+            <div><label>目前狀態</label>
+              <select id="injury-status">
+                <option>治療中</option><option>可訓練(調整)</option><option>完全恢復</option><option>長期觀察</option>
+              </select>
+            </div>
+            <div><label>備註</label><input type="text" id="injury-note" placeholder="選填"></div>
+          </div>
+          <div style="margin-top:14px;"><button class="btn btn-primary" onclick="addInjuryRecord()">＋ 新增紀錄</button></div>
         </div>
-        <div style="margin-top:14px;"><button class="btn btn-primary" onclick="addInjuryRecord()">＋ 新增紀錄</button></div>
-      </div>
 
-      <div class="card" style="padding:0;overflow-x:auto;">
-        <h2 style="padding:20px 22px 0;">傷兵清單</h2>
-        <table style="margin-top:8px;">
-          <thead><tr><th>姓名</th><th>部位</th><th>受傷日期</th><th>狀態</th><th>訓練調整建議</th><th></th></tr></thead>
-          <tbody id="injury-table"></tbody>
-        </table>
+        <div class="card" style="padding:0;overflow-x:auto;">
+          <h2 style="padding:20px 22px 0;">傷兵清單</h2>
+          <table style="margin-top:8px;">
+            <thead><tr><th>姓名</th><th>部位</th><th>受傷日期</th><th>狀態</th><th>訓練調整建議</th><th></th></tr></thead>
+            <tbody id="injury-table"></tbody>
+          </table>
+        </div>
       </div>
     </div>
 
     <!-- ================= GROWTH ================= -->
-    <div class="page" id="page-growth">
-      <h1 class="page-title">成長管理</h1>
-      <p class="page-desc">記錄球員的進步、持平或退步</p>
+    <div id="modal-growth" class="feature-modal-overlay">
+      <div class="feature-modal-box">
+        <div class="feature-modal-close"><button class="btn btn-ghost" onclick="closeFeatureModal('growth')">✕ 關閉</button></div>
+        <h1 class="page-title">成長管理</h1>
+        <p class="page-desc">記錄球員的進步、持平或退步</p>
 
-      <div class="card">
-        <h2>新增紀錄</h2>
-        <div class="grid grid-3">
-          <div><label>日期</label><input type="date" id="growth-date"></div>
-          <div><label>姓名</label><select id="growth-name"></select></div>
-          <div><label>項目</label>
-            <select id="growth-item">
-              <option>守備</option><option>打擊</option><option>跑壘</option><option>傳球</option>
-              <option>投球</option><option>態度</option><option>體能</option><option>心理</option>
+        <div class="card">
+          <h2>新增紀錄</h2>
+          <div class="grid grid-3">
+            <div><label>日期</label><input type="date" id="growth-date"></div>
+            <div><label>姓名</label><select id="growth-name"></select></div>
+            <div><label>項目</label>
+              <select id="growth-item">
+                <option>守備</option><option>打擊</option><option>跑壘</option><option>傳球</option>
+                <option>投球</option><option>態度</option><option>體能</option><option>心理</option>
+              </select>
+            </div>
+          </div>
+          <div class="grid grid-2" style="margin-top:14px;">
+            <div><label>狀況說明</label><textarea id="growth-desc" placeholder="今天觀察到什麼變化"></textarea></div>
+            <div><label>教練評語</label><textarea id="growth-comment" placeholder="下一步建議"></textarea></div>
+          </div>
+          <div style="margin-top:14px;">
+            <label>變化</label>
+            <select id="growth-change" style="max-width:200px;">
+              <option>進步</option><option>持平</option><option>退步</option>
             </select>
           </div>
+          <div style="margin-top:14px;"><button class="btn btn-primary" onclick="addGrowthRecord()">＋ 新增紀錄</button></div>
         </div>
-        <div class="grid grid-2" style="margin-top:14px;">
-          <div><label>狀況說明</label><textarea id="growth-desc" placeholder="今天觀察到什麼變化"></textarea></div>
-          <div><label>教練評語</label><textarea id="growth-comment" placeholder="下一步建議"></textarea></div>
-        </div>
-        <div style="margin-top:14px;">
-          <label>變化</label>
-          <select id="growth-change" style="max-width:200px;">
-            <option>進步</option><option>持平</option><option>退步</option>
-          </select>
-        </div>
-        <div style="margin-top:14px;"><button class="btn btn-primary" onclick="addGrowthRecord()">＋ 新增紀錄</button></div>
-      </div>
 
-      <div class="card" style="padding:0;overflow-x:auto;">
-        <h2 style="padding:20px 22px 0;">紀錄列表</h2>
-        <table style="margin-top:8px;">
-          <thead><tr><th>日期</th><th>姓名</th><th>項目</th><th>說明</th><th>變化</th><th></th></tr></thead>
-          <tbody id="growth-table"></tbody>
-        </table>
+        <div class="card" style="padding:0;overflow-x:auto;">
+          <h2 style="padding:20px 22px 0;">紀錄列表</h2>
+          <table style="margin-top:8px;">
+            <thead><tr><th>日期</th><th>姓名</th><th>項目</th><th>說明</th><th>變化</th><th></th></tr></thead>
+            <tbody id="growth-table"></tbody>
+          </table>
+        </div>
       </div>
     </div>
 
@@ -1024,21 +1070,24 @@
     </div>
 
     <!-- ================= MEETINGS (會議記錄) ================= -->
-    <div class="page" id="page-meetings">
-      <h1 class="page-title">會議記錄</h1>
-      <p class="page-desc">家長座談會、器材採購會議等，獨立記錄，不與比賽/活動混在一起</p>
+    <div id="modal-meetings" class="feature-modal-overlay">
+      <div class="feature-modal-box">
+        <div class="feature-modal-close"><button class="btn btn-ghost" onclick="closeFeatureModal('meetings')">✕ 關閉</button></div>
+        <h1 class="page-title">會議記錄</h1>
+        <p class="page-desc">家長座談會、器材採購會議等，獨立記錄，不與比賽/活動混在一起</p>
 
-      <div class="card">
-        <h2>新增會議</h2>
-        <div class="grid grid-2">
-          <div><label>日期</label><input type="date" id="meeting-date"></div>
-          <div><label>會議名稱</label><input type="text" id="meeting-title" placeholder="例如：家長座談會、器材採購會議"></div>
+        <div class="card">
+          <h2>新增會議</h2>
+          <div class="grid grid-2">
+            <div><label>日期</label><input type="date" id="meeting-date"></div>
+            <div><label>會議名稱</label><input type="text" id="meeting-title" placeholder="例如：家長座談會、器材採購會議"></div>
+          </div>
+          <div style="margin-top:14px;"><label>內容/備註</label><textarea id="meeting-note" placeholder="會議地點、時間、討論事項等"></textarea></div>
+          <div style="margin-top:14px;"><button class="btn btn-primary" onclick="addMeeting()">＋ 新增會議</button></div>
         </div>
-        <div style="margin-top:14px;"><label>內容/備註</label><textarea id="meeting-note" placeholder="會議地點、時間、討論事項等"></textarea></div>
-        <div style="margin-top:14px;"><button class="btn btn-primary" onclick="addMeeting()">＋ 新增會議</button></div>
-      </div>
 
-      <div id="meetings-list" class="card-grid"></div>
+        <div id="meetings-list" class="card-grid"></div>
+      </div>
     </div>
 
 
@@ -1738,19 +1787,13 @@ function setDatesToday(){
 /* ---------- Tabs ---------- */
 const TABS_CONFIG = [
   { page:'home',       num:'01', label:'今日總覽' },
-  { page:'players',    num:'02', label:'球員名單' },
-  { page:'positions',  num:'03', label:'球員守備位子' },
-  { page:'intrasquad', num:'04', label:'隊內分組賽名單' },
-  { page:'attendance', num:'05', label:'點名/請假單' },
-  { page:'schedule',   num:'06', label:'賽事管理' },
-  { page:'growth',     num:'07', label:'成長管理' },
-  { page:'pitch',      num:'08', label:'投手球數' },
-  { page:'injury',     num:'09', label:'傷兵管理' },
-  { page:'fitness',    num:'10', label:'體能檢測' },
-  { page:'cleaning',   num:'11', label:'球場打掃分組' },
-  { page:'fees',       num:'12', label:'預算管理' },
-  { page:'practice',   num:'13', label:'練球通知' },
-  { page:'meetings',   num:'14', label:'會議記錄' },
+  { page:'practice',   num:'02', label:'練球通知' },
+  { page:'attendance', num:'03', label:'出缺席名單' },
+  { page:'players',    num:'04', label:'球員名單' },
+  { page:'schedule',   num:'05', label:'球隊賽事' },
+  { page:'fitness',    num:'06', label:'體能檢測' },
+  { page:'fees',       num:'07', label:'預算管理' },
+  { page:'cleaning',   num:'08', label:'球場打掃分組' },
 ];
 
 let currentPage = 'home';
@@ -1771,6 +1814,16 @@ function switchToTab(pageName){
   const page = document.getElementById('page-'+pageName);
   if(page) page.classList.add('active');
   renderRailTabs();
+}
+
+// 通用的「跳視窗」功能彈窗開關（球員守備位子/成長管理/傷兵管理/投手球數/會議記錄/隊內分組賽名單）
+function openFeatureModal(id){
+  const modal = document.getElementById('modal-'+id);
+  if(modal) modal.style.display = 'flex';
+}
+function closeFeatureModal(id){
+  const modal = document.getElementById('modal-'+id);
+  if(modal) modal.style.display = 'none';
 }
 
 // 從隊內分組賽的先發投手，快速跳轉到投手球數頁面並預填球員與日期
@@ -1828,11 +1881,13 @@ function starHtml(playerId, skill){
 
 function addPlayer(){
   const name = document.getElementById('new-player-name').value.trim();
-  const number = document.getElementById('new-player-number').value.trim();
+  const cls = document.getElementById('new-player-class').value.trim();
+  const seat = document.getElementById('new-player-seat').value.trim();
   if(!name){ toast('請輸入球員姓名'); return; }
-  state.players.push({ id: uid(), name, class: '', status:'在隊', group:'', number });
+  state.players.push({ id: uid(), name, class: cls, seat, status:'在隊', group:'' });
   document.getElementById('new-player-name').value = '';
-  document.getElementById('new-player-number').value = '';
+  document.getElementById('new-player-class').value = '';
+  document.getElementById('new-player-seat').value = '';
   saveState();
   fillNameSelects();
   renderPlayers();
@@ -2334,7 +2389,10 @@ function renderPlayers(){
         <input type="text" value="${p.name}" style="font-weight:700;flex:1;min-width:0;" onchange="updatePlayerField('${p.id}','name',this.value)">
         <button class="icon-btn" onclick="deletePlayer('${p.id}')">刪除</button>
       </div>
-      <div style="margin-bottom:8px;"><label>背號</label><input type="text" value="${p.number||''}" placeholder="例如：7" style="max-width:100%;" onchange="updatePlayerField('${p.id}','number',this.value)"></div>
+      <div style="display:flex;gap:8px;margin-bottom:8px;">
+        <div style="flex:1;"><label>班級</label><input type="text" value="${p.class||''}" placeholder="例如：一年一班" onchange="updatePlayerField('${p.id}','class',this.value)"></div>
+        <div style="flex:1;"><label>座號</label><input type="text" value="${p.seat||''}" placeholder="例如：12" onchange="updatePlayerField('${p.id}','seat',this.value)"></div>
+      </div>
       <div style="margin-bottom:8px;"><label>組別</label><select onchange="updatePlayerField('${p.id}','group',this.value)">${groupOptions}</select></div>
       <div style="margin-bottom:8px;"><label>狀態</label><select onchange="updatePlayerField('${p.id}','status',this.value)">${statusOptions}</select></div>
       <div><label>職務</label><div>${badgesHtml}</div></div>
@@ -2836,19 +2894,13 @@ function renderGrowth(){
 
 /* ---------- Home ---------- */
 const HOME_NAV_ITEMS = [
-  { page:'players',    icon:'👥', label:'球員名單',       num:'02' },
-  { page:'positions',  icon:'⚾', label:'球員守備位子',   num:'03' },
-  { page:'intrasquad', icon:'🆚', label:'隊內分組賽名單', num:'04' },
-  { page:'attendance', icon:'✅', label:'點名/請假單',    num:'05' },
-  { page:'schedule',   icon:'📅', label:'賽事管理',       num:'06' },
-  { page:'growth',     icon:'📈', label:'成長管理',       num:'07' },
-  { page:'pitch',      icon:'🎯', label:'投手球數',       num:'08' },
-  { page:'injury',     icon:'🩹', label:'傷兵管理',       num:'09' },
-  { page:'fitness',    icon:'💪', label:'體能檢測',       num:'10' },
-  { page:'cleaning',   icon:'🧹', label:'球場打掃分組',   num:'11' },
-  { page:'fees',       icon:'💰', label:'預算管理',       num:'12' },
-  { page:'practice',   icon:'📢', label:'練球通知',       num:'13' },
-  { page:'meetings',   icon:'📝', label:'會議記錄',       num:'14' },
+  { page:'practice',   icon:'📢', label:'練球通知',   num:'02' },
+  { page:'attendance', icon:'✅', label:'出缺席名單', num:'03' },
+  { page:'players',    icon:'👥', label:'球員名單',   num:'04' },
+  { page:'schedule',   icon:'📅', label:'球隊賽事',   num:'05' },
+  { page:'fitness',    icon:'💪', label:'體能檢測',   num:'06' },
+  { page:'fees',       icon:'💰', label:'預算管理',   num:'07' },
+  { page:'cleaning',   icon:'🧹', label:'球場打掃分組', num:'08' },
 ];
 
 function renderHomeNav(){
@@ -2917,7 +2969,7 @@ function exportToExcel(){
   const skills = ['守備','打擊','跑壘','投球','態度','體能'];
   const ratingRows = state.players.map(p=>{
     const r = state.ratings[p.id] || {};
-    const row = {姓名:p.name, 背號:p.number||'', 組別:p.group||'未分組', 職務:playerBadges(p.name).join('、')||'', 守備位置:playerPositions(p.name).join('、')||'', 狀態:p.status};
+    const row = {姓名:p.name, 班級:p.class||'', 座號:p.seat||'', 組別:p.group||'未分組', 職務:playerBadges(p.name).join('、')||'', 守備位置:playerPositions(p.name).join('、')||'', 狀態:p.status};
     skills.forEach(sk=>row[sk]=r[sk]||3);
     row['綜合平均'] = (skills.reduce((s,k)=>s+(r[k]||3),0)/skills.length).toFixed(2);
     return row;
